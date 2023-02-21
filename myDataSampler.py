@@ -3,7 +3,7 @@ import math
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from torchvision import transforms, datasets
+from torchvision import transforms, datasets, random_split
 
 
 
@@ -41,12 +41,17 @@ image_transforms = {
     ])
 }
 
+#Creating own dataset
 natural_img_dataset = datasets.ImageFolder(
                               root = root_dir,
                               transform = image_transforms["train"]
                        )
 
-for tensor in torch.utils.data.DataLoader(natural_img_dataset, num_workers=1):
-    print(tensor)
-    print(natural_img_dataset.class_to_idx)
-    break
+#Then split the dataset into training and validation set
+train_dataset, val_dataset = random_split(natural_img_dataset, (6000, 899))
+
+#for tensor in torch.utils.data.DataLoader(natural_img_dataset, num_workers=1):
+#    print(tensor)
+#    print(natural_img_dataset.class_to_idx)
+#    break
+
