@@ -1,5 +1,14 @@
 {
     "ROOT_DATADIR": {
-        "dir": "/home/rongon/Documents/research/shuffling/Codes/ProjectCode/natural_image/data/natural_images/"
+        "dir": "/home/rongon/Documents/research/shuffling/Codes/ProjectCode/natural_image/",
+        "data_dir": "/home/rongon/Documents/research/shuffling/Codes/ProjectCode/natural_image/natural_images/",
+        "train_dir": "/home/rongon/Documents/research/shuffling/Codes/ProjectCode/natural_image/data_2/"
+    },
+    "MODEL":{
+        "batch_size": 32,
+        "epochs": 10,
+        "base_lr": 5,
+        "seed": 42,
+        "batches_per_allreduce":1
     }
 }
