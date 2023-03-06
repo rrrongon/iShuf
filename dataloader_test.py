@@ -8,6 +8,8 @@ from torchvision.io import read_image
 import os, json
 import pandas as pd
 from myDataSampler import CustomSampler
+from utils.sampler import DistributedSampler as dsampler
+import horovod.torch as hvd
 
 class CustomImageDataset(Dataset):
     def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
@@ -110,18 +112,45 @@ class CustomDataset(Dataset):
         
         return image, new_label
 
-f = open('config.json')
-configs =json.load(f)
-root_dir = configs["ROOT_DATADIR"]["train_dir"]
-_train_dir = root_dir + "train/"
-_label_file_path = os.path.join(root_dir, "train_filepath.csv")
-dataset = CustomDataset(img_dir=_train_dir, label_file_path=_label_file_path)
+if __name__ == '__main__':
+    
+    _is_cuda = torch.cuda.is_available()
+
+    hvd.init()
+    rank = hvd.rank()
+    f = open('config.json')
+    configs =json.load(f)
+    torch.manual_seed(configs["MODEL"]["seed"])
+
+    root_dir = configs["ROOT_DATADIR"]["train_dir"]
+    _train_dir = root_dir + "train/"
+    _label_file_path = os.path.join(root_dir, "train_filepath.csv")
+    _train_dataset = CustomDataset(img_dir=_train_dir, label_file_path=_label_file_path)
 
 
-custom_sampler = CustomSampler(dataset)
-loader = DataLoader(dataset, batch_size=2, sampler=custom_sampler)
+    allreduce_batch_size = configs["MODEL"]["no_of_batches"] * configs["MODEL"]["batch_size"]
+    #custom_sampler = CustomSampler(_train_dataset)
+    _train_sampler = dsampler(
+            _train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+    _train_loader = torch.utils.data.DataLoader(
+            _train_dataset, batch_size=allreduce_batch_size,
+            sampler=_train_sampler)
 
+    print("train loader:\n")
+    it = iter(_train_loader)
+    print(next(it))
 
-it = iter(loader)
-print(next(it))
+    _val_dir = root_dir + "val/"
+    _label_file_path = os.path.join(root_dir, "val_filepath.csv")
+    _val_dataset = CustomDataset(img_dir=_val_dir, label_file_path=_label_file_path)
 
+    #custom_sampler = CustomSampler(_val_dataset)
+    _val_sampler = dsampler(
+            _val_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+    _val_loader = torch.utils.data.DataLoader(
+            _train_dataset, batch_size=allreduce_batch_size,
+            sampler=_val_sampler)
+
+    print("test loader:\n")
+    it = iter(_val_loader)
+    print(next(it))

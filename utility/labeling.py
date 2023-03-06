@@ -57,4 +57,6 @@ if __name__ == '__main__':
     configs =json.load(f)
     root_dir = configs["ROOT_DATADIR"]["train_dir"]
     train_dir = root_dir + "train/"
-    SL = SampleLabeling(train_dir, root_dir)
+    SL1 = SampleLabeling(train_dir, root_dir)
+    val_dir = root_dir + "val/"
+    SL2 = SampleLabeling(val_dir, root_dir)
