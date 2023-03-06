@@ -7,7 +7,7 @@ from torchvision.transforms import ToTensor
 from torchvision.io import read_image
 import os, json
 import pandas as pd
-
+from myDataSampler import CustomSampler
 
 class CustomImageDataset(Dataset):
     def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
@@ -117,7 +117,11 @@ _train_dir = root_dir + "train/"
 _label_file_path = os.path.join(root_dir, "train_filepath.csv")
 dataset = CustomDataset(img_dir=_train_dir, label_file_path=_label_file_path)
 
-it = iter(dataset)
-print(next(it))
 
+custom_sampler = CustomSampler(dataset)
+loader = DataLoader(dataset, batch_size=2, sampler=custom_sampler)
+
+
+it = iter(loader)
+print(next(it))
 

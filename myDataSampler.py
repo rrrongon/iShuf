@@ -3,7 +3,7 @@ import math
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from torchvision import transforms, datasets, random_split
+from torchvision import transforms, datasets
 
 
 
@@ -32,6 +32,7 @@ class MyIterableDataset(torch.utils.data.IterableDataset):
 #for tensor in torch.utils.data.DataLoader(_dataset, num_workers=2):
 #    print(tensor)
 
+'''
 root_dir = "/home/rongon/Documents/research/shuffling/Codes/ProjectCode/natural_image/data/natural_images/"
 
 image_transforms = {
@@ -54,4 +55,17 @@ train_dataset, val_dataset = random_split(natural_img_dataset, (6000, 899))
 #    print(tensor)
 #    print(natural_img_dataset.class_to_idx)
 #    break
+'''
+
+class CustomSampler(torch.utils.data.Sampler):
+    def __init__(self, dataset):
+        self.dataset = dataset
+
+    def __iter__(self):
+        indices = list(range(len(self.dataset)))
+        indices = indices[::-1]  # Reverse the order of indices
+        return iter(indices)
+
+    def __len__(self):
+        return len(self.dataset)
 

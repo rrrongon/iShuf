@@ -45,11 +45,12 @@ class SampleLabeling:
             csvwriter.writerow(fields)
             for idx,_class in enumerate(self._classes):
                 _class_dir = dir + _class + "/"
-                _files = os.listdir(_class_dir)
-                label = idx
-                for _file in _files:
-                    _img_path = os.path.join(_class,_file)
-                    csvwriter.writerow([_img_path,label])
+                if (os.path.isdir(_class_dir)): #also need to check if it is in the label file or not
+                    _files = os.listdir(_class_dir)
+                    label = idx
+                    for _file in _files:
+                        _img_path = os.path.join(_class,_file)
+                        csvwriter.writerow([_img_path,label])
 
 if __name__ == '__main__':
     f = open('config.json')

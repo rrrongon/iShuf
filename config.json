@@ -1,9 +1,9 @@
 {
     "ROOT_DATADIR": {
-        "dir": "/home/rongon/Documents/research/shuffling/Codes/ProjectCode/natural_image/",
-        "data_dir": "/home/rongon/Documents/research/shuffling/Codes/ProjectCode/natural_image/natural_images/",
-        "train_dir": "/home/rongon/Documents/research/shuffling/Codes/ProjectCode/natural_image/data_2/",
-        "log_dir": "/home/rongon/Documents/research/shuffling/Codes/ProjectCode/natural_image/logs/"
+        "dir": "/Users/rubayetrahmanrongon/Documents/Academic/WSU/Research/shuffling/customdatasampler/natural_image/",
+        "data_dir": "/Users/rubayetrahmanrongon/Documents/Academic/WSU/Research/shuffling/customdatasampler/natural_image/natural_images/",
+        "train_dir": "/Users/rubayetrahmanrongon/Documents/Academic/WSU/Research/shuffling/customdatasampler/natural_image/data_2/",
+        "log_dir": "/Users/rubayetrahmanrongon/Documents/Academic/WSU/Research/shuffling/customdatasampler/natural_image/logs/"
     },
     "MODEL":{
         "batch_size": 32,
