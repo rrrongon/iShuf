@@ -8,8 +8,10 @@ from torchvision.io import read_image
 import os, json
 import pandas as pd
 from myDataSampler import CustomSampler
-from utils.sampler import DistributedSampler as dsampler
+from utility.sampler import DistributedSampler as dsampler
 import horovod.torch as hvd
+from  torchvision import transforms
+import PIL
 
 class CustomImageDataset(Dataset):
     def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
@@ -94,7 +96,11 @@ class CustomDataset(Dataset):
         except:
             print("Could not open file {0}".format(label_file_path))
             exit(1)
-        self.transform = transform
+        self.transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ])
         self.target_transform = target_transform
 
     def __len__(self):
@@ -102,7 +108,7 @@ class CustomDataset(Dataset):
     
     def __getitem__(self, idx):
         img_path = os.path.join(self.img_dir, self._labels.iloc[idx,0])
-        image = read_image(img_path)
+        image = PIL.Image.open(img_path)
         label = self._labels.iloc[idx, 1]
         new_label = str(label) + "_" + str(idx)
         if self.transform:
