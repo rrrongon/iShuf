@@ -10,8 +10,25 @@ import pandas as pd
 from myDataSampler import CustomSampler
 from utility.sampler import DistributedSampler as dsampler
 import horovod.torch as hvd
-from  torchvision import transforms
+from  torchvision import transforms, models
 import PIL
+from mpi4py import MPI
+import torch.optim as optim
+
+
+class Metric(object):
+    def __init__(self, name):
+        self.name = name
+        self.sum = torch.tensor(0.)
+        self.n = torch.tensor(0.)
+
+    def update(self, val):
+        self.sum += hvd.allreduce(val.detach().cpu(), name=self.name)
+        self.n += 1
+
+    @property
+    def avg(self):
+        return self.sum / self.n
 
 class CustomImageDataset(Dataset):
     def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
@@ -116,8 +133,27 @@ class CustomDataset(Dataset):
         if self.target_transform:
             label = self.target_transform(label)
         
-        return image, new_label
+        y_one_hot = torch.zeros(10)
+        y_one_hot[label] = 1
+        return image, y_one_hot
 
+def train(epoch):
+    torch.cuda.synchronize()
+    model.train()
+
+    #train_dataset.next_epoch() ## Update the dataset to use the newly received samples
+    #train_sampler.set_epoch(epoch) ## Set the epoch in sampler and #Create a new indices list
+    train_loss = Metric('train_loss')
+    train_accuracy = Metric('train_accuracy')
+    rank = hvd.rank()
+
+    torch.cuda.synchronize()
+    for batch_idx, (data, target) in enumerate(_train_loader):
+        if _is_cuda:
+            data, target = data.cuda(), target.cuda()
+
+        optimizer.zero_grad()
+        
 if __name__ == '__main__':
     
     _is_cuda = torch.cuda.is_available()
@@ -142,9 +178,11 @@ if __name__ == '__main__':
             _train_dataset, batch_size=allreduce_batch_size,
             sampler=_train_sampler)
 
+    '''
     print("train loader:\n")
     it = iter(_train_loader)
     print(next(it))
+    '''
 
     _val_dir = root_dir + "val/"
     _label_file_path = os.path.join(root_dir, "val_filepath.csv")
@@ -156,7 +194,39 @@ if __name__ == '__main__':
     _val_loader = torch.utils.data.DataLoader(
             _train_dataset, batch_size=allreduce_batch_size,
             sampler=_val_sampler)
-
+    '''
     print("test loader:\n")
     it = iter(_val_loader)
     print(next(it))
+    '''
+    wd = 0.00005
+    use_adasum = 0
+    MPI.COMM_WORLD.Barrier()
+    model = models.resnet50()
+    lr_scaler = configs["MODEL"]["batch_size"] * hvd.size() if not use_adasum else 1
+    base_lr = 0.0125
+    momentum = 0.9
+
+
+    print ("Finish models") if hvd.rank() == 0 else None
+    if _is_cuda:
+        # Move model to GPU.
+        model.cuda()
+        # If using GPU Adasum allreduce, scale learning rate by local_size.
+        if use_adasum and hvd.nccl_built():
+            lr_scaler = configs["MODEL"]["batch_size"] * hvd.local_size()
+
+    MPI.COMM_WORLD.Barrier()
+    # Horovod: scale learning rate by the number of GPUs.
+    optimizer = optim.SGD(model.parameters(), lr=(base_lr * lr_scaler),
+                          momentum=momentum, weight_decay=wd)
+
+    MPI.COMM_WORLD.Barrier()
+
+    # Horovod: broadcast parameters & optimizer state.
+    hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+    hvd.broadcast_optimizer_state(optimizer, root_rank=0)
+
+    epoch_no = 5
+    for epoch in range(epoch_no):
+        train(epoch)
