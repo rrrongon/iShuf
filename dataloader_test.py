@@ -137,6 +137,11 @@ class CustomDataset(Dataset):
         y_one_hot[label] = 1
         return image, y_one_hot
 
+def accuracy(output, target):
+    # get the index of the max log-probability
+    pred = output.max(1, keepdim=True)[1]
+    return pred.eq(target.view_as(pred)).cpu().float().mean()
+
 def train(epoch):
     torch.cuda.synchronize()
     model.train()
@@ -146,13 +151,29 @@ def train(epoch):
     train_loss = Metric('train_loss')
     train_accuracy = Metric('train_accuracy')
     rank = hvd.rank()
+    _batch_size = configs["MODEL"]["batch_size"]
 
     torch.cuda.synchronize()
     for batch_idx, (data, target) in enumerate(_train_loader):
+        print("batch no: {0}, length of batch: {1}, target len: {2}, each target len{3}".format(batch_idx, len(data), len(target), len(target[0])))
         if _is_cuda:
             data, target = data.cuda(), target.cuda()
 
         optimizer.zero_grad()
+        for i in range(0, len(data), _batch_size)
+            data_batch = data[i:i + _batch_size]
+            target_batch = target[i:i + _batch_size]
+            output = model(data_batch)
+            loss = F.cross_entropy(output, target_batch)
+
+            torch.cuda.synchronize()
+            accuracy_iter = accuracy(output, target_batch)
+            train_accuracy.update(accuracy_iter)
+            train_loss.update(loss)
+
+            loss.div_(math.ceil(float(len(data)) / _batch_size)
+            loss.backward()
+
         
 if __name__ == '__main__':
     
@@ -227,6 +248,6 @@ if __name__ == '__main__':
     hvd.broadcast_parameters(model.state_dict(), root_rank=0)
     hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
-    epoch_no = 5
+    epoch_no = 1
     for epoch in range(epoch_no):
         train(epoch)
