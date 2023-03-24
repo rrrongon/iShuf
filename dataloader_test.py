@@ -14,7 +14,8 @@ from  torchvision import transforms, models
 import PIL
 from mpi4py import MPI
 import torch.optim as optim
-
+import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 
 class Metric(object):
     def __init__(self, name):
@@ -136,24 +137,75 @@ class CustomDataset(Dataset):
         y_one_hot = torch.zeros(10)
         y_one_hot[label] = 1
         return image, y_one_hot
+def accuracy(output, target):
+    # get the index of the max log-probability
+    pred = output.max(1, keepdim=True)[1]
+    return pred.eq(target.view_as(pred)).cpu().float().mean()
 
 def train(epoch):
     torch.cuda.synchronize()
     model.train()
-
+    _batch_size = configs["MODEL"]["batch_size"] 
     #train_dataset.next_epoch() ## Update the dataset to use the newly received samples
     #train_sampler.set_epoch(epoch) ## Set the epoch in sampler and #Create a new indices list
     train_loss = Metric('train_loss')
     train_accuracy = Metric('train_accuracy')
     rank = hvd.rank()
-
+    _losses = list()
     torch.cuda.synchronize()
     for batch_idx, (data, target) in enumerate(_train_loader):
+        print("batch no: {0}, length of batch: {1}, target len: {2}, each target len{3}".format(batch_idx, len(data), len(target), len(target[0])))        
         if _is_cuda:
             data, target = data.cuda(), target.cuda()
 
         optimizer.zero_grad()
+        for i in range(0, len(data), _batch_size):
+            data_batch = data[i:i + _batch_size]
+            target_batch = target[i:i + _batch_size]
+            output = model(data_batch)
+            loss = F.cross_entropy(output, target_batch)
+            loss.div_(math.ceil(float(len(data)) / _batch_size))
+            loss.backward()
+            _losses.append(loss)
+            print("loss: {loss}") 
+        optimizer.step()
+    
+    torch.cuda.synchronize()
+    accuracy_iter = accuracy(output, target_batch)
+    train_accuracy.update(accuracy_iter)
+    train_loss.update(loss)
+
+def validate(epoch, log_dir):
+    model.eval()
+    val_loss = Metric('val_loss')
+    val_accuracy = Metric('val_accuracy')
+    rank = hvd.rank()
+    
+    if rank ==0:
+        accuracy_file = open(os.path.join(log_dir, "val_accuracy_per_epoch.log"), "a", buffering=1)
+        loss_file = open(os.path.join(log_dir, "val_loss_per_epoch.log"), "a", buffering=1)
+
+    with torch.no_grad():
+        for data, target in _val_loader:
+            if _is_cuda:
+                data, target = data.cuda(), target.cuda()
+            output = model(data)
+
+            val_loss.update(F.cross_entropy(output, target))
+            val_accuracy.update(accuracy(output, target))
         
+    if log_writer:
+        log_writer.add_scalar('val/loss', val_loss.avg, epoch)
+        log_writer.add_scalar('val/accuracy', val_accuracy.avg, epoch)
+    if rank == 0 :
+        print("{:.10f}".format(val_accuracy.avg), file=accuracy_file) 
+        print("{:.10f}".format(val_loss.avg), file=loss_file) 
+    else:
+        None
+    if rank ==0:
+        accuracy_file.close()
+        loss_file.close()
+    
 if __name__ == '__main__':
     
     _is_cuda = torch.cuda.is_available()
@@ -178,6 +230,8 @@ if __name__ == '__main__':
             _train_dataset, batch_size=allreduce_batch_size,
             sampler=_train_sampler)
 
+    # Horovod: write TensorBoard logs on first worker.
+    log_writer = SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
     '''
     print("train loader:\n")
     it = iter(_train_loader)
@@ -227,6 +281,6 @@ if __name__ == '__main__':
     hvd.broadcast_parameters(model.state_dict(), root_rank=0)
     hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
-    epoch_no = 5
+    epoch_no = 3
     for epoch in range(epoch_no):
         train(epoch)
