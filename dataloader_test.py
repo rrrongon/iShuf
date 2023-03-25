@@ -14,7 +14,7 @@ from  torchvision import transforms, models
 import PIL
 from mpi4py import MPI
 import torch.optim as optim
-
+import torch.nn.functional as F
 
 class Metric(object):
     def __init__(self, name):
@@ -142,39 +142,95 @@ def accuracy(output, target):
     pred = output.max(1, keepdim=True)[1]
     return pred.eq(target.view_as(pred)).cpu().float().mean()
 
+import torch.nn as nn
+
 def train(epoch):
     torch.cuda.synchronize()
     model.train()
 
     #train_dataset.next_epoch() ## Update the dataset to use the newly received samples
     #train_sampler.set_epoch(epoch) ## Set the epoch in sampler and #Create a new indices list
-    train_loss = Metric('train_loss')
-    train_accuracy = Metric('train_accuracy')
     rank = hvd.rank()
+    world_size = hvd.size()
     _batch_size = configs["MODEL"]["batch_size"]
 
     torch.cuda.synchronize()
     for batch_idx, (data, target) in enumerate(_train_loader):
-        print("batch no: {0}, length of batch: {1}, target len: {2}, each target len{3}".format(batch_idx, len(data), len(target), len(target[0])))
         if _is_cuda:
             data, target = data.cuda(), target.cuda()
 
-        optimizer.zero_grad()
-        for i in range(0, len(data), _batch_size)
-            data_batch = data[i:i + _batch_size]
-            target_batch = target[i:i + _batch_size]
-            output = model(data_batch)
-            loss = F.cross_entropy(output, target_batch)
+        print("batch no: {0}, length of batch: {1}, target len: {2}, each target len {3}".format(batch_idx, len(data), len(target), len(target[0])))
 
-            torch.cuda.synchronize()
-            accuracy_iter = accuracy(output, target_batch)
-            train_accuracy.update(accuracy_iter)
+        #set zero to optimizer
+        optimizer.zero_grad()
+
+        #Prepare data for each process by spliting
+        train_data_splits = torch.split(data, _batch_size) #create split chunk of size batch size. Then by rank each rank can process a part of chunk of batch_size
+        train_target_splits = torch.split(target, _batch_size)
+        process_train_data = train_data_splits[rank] #data to train for ranks
+        process_train_target = train_target_splits[rank] # target label of data for ranks
+
+        for i in range(rank, len(train_data_splits), world_size):
+
+            process_train_data = train_data_splits[i] #data to train for ranks
+            process_train_target = train_target_splits[i] #label of those data
+
+            #check length of data and target are same
+            assert len(process_train_data) == len(process_train_target) , "Error in splitting of data and target "
+
+            #data_batch = data[i:i + _batch_size]
+            #target_batch = target[i:i + _batch_size]
+            output = model(process_train_data)
+            loss = loss_fn(output, process_train_target)
+
+            # compute gradients
+            loss.div_(math.ceil(float(len(data)) / _batch_size))
+            loss.backward()
+            print("output {0} \ntarget: {1}".format(output, process_train_target))
+            print("loss {0}".format(loss)) 
+
+            # Compute Accuracy
+            if rank == 0:
+                print()
+                accuracy = (output.argmax(dim=1).reshape(-1,1) == process_train_target).float().mean()
+                print(f"Epoch {epoch}, Loss {loss.item()}, Accuracy {accuracy.item()}")
+            '''
+            try:
+                loss = loss_fn(output, target_batch)
+                print("Loss# {0}".format(loss))
+            except Exception as e:
+                print("output {0}\ntarget: {1}".format(output, target_batch))
+                print("output shape{0}\n target shape{1}".format(output.shape, target_batch.shape))
+                print("Exception {0}".format(e))
+            '''
+        torch.cuda.synchronize()
+        MPI.COMM_WORLD.Barrier()
+        # average gradients across workers
+        #all_parameters = list(model.parameters()) # convert to list
+        #hvd.torch.allreduce(model.parameter(), average=True)
+
+        # update model parameters
+        optimizer.step()
+
+        '''
+            #accuracy_iter = accuracy(output, target_batch)
+            _, predicted = torch.max(output, 1)
+            _, target = torch.max(target_batch, 1)
+            try:
+                correct = (predicted == target).sum().item()
+            except Exception as e:
+                print("Exception{0}".format(e))
+                print("predicted{0}\n target_batch: {1}".format(predicted, target_batch))
+            accuracy = correct / len(target_batch)
+            print("Accuracy: {:.2f}%".format(accuracy*100))
+
+            train_accuracy.update(accuracy)
             train_loss.update(loss)
 
-            loss.div_(math.ceil(float(len(data)) / _batch_size)
+            loss.div_(math.ceil(float(len(data)) / _batch_size))
             loss.backward()
+        '''
 
-        
 if __name__ == '__main__':
     
     _is_cuda = torch.cuda.is_available()
@@ -223,7 +279,10 @@ if __name__ == '__main__':
     wd = 0.00005
     use_adasum = 0
     MPI.COMM_WORLD.Barrier()
-    model = models.resnet50()
+    model = models.resnet50(pretrained=True)
+    num_ftrs = model.fc.in_features
+    model.fc = nn.Linear(num_ftrs, 10)
+    
     lr_scaler = configs["MODEL"]["batch_size"] * hvd.size() if not use_adasum else 1
     base_lr = 0.0125
     momentum = 0.9
@@ -241,6 +300,10 @@ if __name__ == '__main__':
     # Horovod: scale learning rate by the number of GPUs.
     optimizer = optim.SGD(model.parameters(), lr=(base_lr * lr_scaler),
                           momentum=momentum, weight_decay=wd)
+
+    optimizer = hvd.DistributedOptimizer(optimizer, named_parameters=model.named_parameters())
+
+    loss_fn = nn.CrossEntropyLoss()
 
     MPI.COMM_WORLD.Barrier()
 
