@@ -145,6 +145,13 @@ def accuracy(output, target):
 import torch.nn as nn
 
 def train(epoch):
+
+    # Check if GPU is available
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+
     torch.cuda.synchronize()
     model.train()
 
@@ -153,6 +160,8 @@ def train(epoch):
     rank = hvd.rank()
     world_size = hvd.size()
     _batch_size = configs["MODEL"]["batch_size"]
+    _validation_iteration_number = 10
+
 
     torch.cuda.synchronize()
     for batch_idx, (data, target) in enumerate(_train_loader):
@@ -167,34 +176,45 @@ def train(epoch):
         #Prepare data for each process by spliting
         train_data_splits = torch.split(data, _batch_size) #create split chunk of size batch size. Then by rank each rank can process a part of chunk of batch_size
         train_target_splits = torch.split(target, _batch_size)
-        process_train_data = train_data_splits[rank] #data to train for ranks
-        process_train_target = train_target_splits[rank] # target label of data for ranks
 
-        for i in range(rank, len(train_data_splits), world_size):
+        try:
+            process_train_data = train_data_splits[rank] #data to train for ranks
+            process_train_target = train_target_splits[rank] # target label of data for ranks
+        except Exception as e:
+            #some ranks might not get data to train on the last batch
+            process_train_data = None
+            process_train_target = None
 
-            process_train_data = train_data_splits[i] #data to train for ranks
-            process_train_target = train_target_splits[i] #label of those data
+        if process_train_data != None:
+            for i in range(rank, len(train_data_splits), world_size):
 
-            #check length of data and target are same
-            assert len(process_train_data) == len(process_train_target) , "Error in splitting of data and target "
+                process_train_data = train_data_splits[i] #data to train for ranks
+                process_train_target = train_target_splits[i] #label of those data
+    
+                #tackle last mini batch
+                if len(process_train_data) != _batch_size:
+                    continue #currently skipping last batch. Later tackle using proper method
+            
+                #check length of data and target are same
+                assert len(process_train_data) == len(process_train_target) , "Error in splitting of data and target "
 
-            #data_batch = data[i:i + _batch_size]
-            #target_batch = target[i:i + _batch_size]
-            output = model(process_train_data)
-            loss = loss_fn(output, process_train_target)
+                #data_batch = data[i:i + _batch_size]
+                #target_batch = target[i:i + _batch_size]
+                output = model(process_train_data)
+                loss = loss_fn(output, process_train_target)
 
-            # compute gradients
-            loss.div_(math.ceil(float(len(data)) / _batch_size))
-            loss.backward()
-            print("output {0} \ntarget: {1}".format(output, process_train_target))
-            print("loss {0}".format(loss)) 
+                # compute gradients
+                loss.div_(math.ceil(float(len(data)) / _batch_size))
+                loss.backward()
+                #print("output {0} \ntarget: {1}".format(output, process_train_target))
+                print("loss {0}".format(loss)) 
 
-            # Compute Accuracy
-            if rank == 0:
-                print()
-                accuracy = (output.argmax(dim=1).reshape(-1,1) == process_train_target).float().mean()
-                print(f"Epoch {epoch}, Loss {loss.item()}, Accuracy {accuracy.item()}")
-            '''
+                # Compute Accuracy
+                if rank == 0:
+                    accuracy = (output.argmax(dim=1).reshape(-1,1) == process_train_target).float().mean()
+                    print(f"Epoch {epoch}, Loss {loss.item()}, Accuracy {accuracy.item()}")
+                    print("Accuracy {0}".format(accuracy))
+                '''
             try:
                 loss = loss_fn(output, target_batch)
                 print("Loss# {0}".format(loss))
@@ -202,7 +222,30 @@ def train(epoch):
                 print("output {0}\ntarget: {1}".format(output, target_batch))
                 print("output shape{0}\n target shape{1}".format(output.shape, target_batch.shape))
                 print("Exception {0}".format(e))
-            '''
+                '''
+
+                if (batch_idx + 1) % _validation_iteration_number == 0:
+                    model.eval()
+                    # Compute validation loss and accuracy
+                    val_loss = 0.0
+                    val_acc = 0.0
+
+                    with torch.no_grad():
+                        for val_data, val_target in _val_loader:
+                            val_data, val_target = val_data.to(device), val_target.to(device)
+                            val_output = model(val_data)
+                            val_loss += loss_fn(val_output, val_target).item()
+                            val_acc += (val_output.argmax(dim=1).reshape(-1,1) == val_target).float().sum().item()
+
+                        # Average validation results across processes
+                        val_loss /= len(val_data) * world_size
+                        val_acc /= len(val_data) * world_size
+                    
+                        # Print validation results
+                        print(f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_acc:.4f}")
+            
+                    model.train()
+
         torch.cuda.synchronize()
         MPI.COMM_WORLD.Barrier()
         # average gradients across workers
@@ -311,6 +354,7 @@ if __name__ == '__main__':
     hvd.broadcast_parameters(model.state_dict(), root_rank=0)
     hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
-    epoch_no = 1
+    epoch_no = 30
     for epoch in range(epoch_no):
+        print("------------------- Epoch {0}--------------------\n".format(epoch))
         train(epoch)
