@@ -150,6 +150,7 @@ def train(epoch):
     #train_sampler.set_epoch(epoch) ## Set the epoch in sampler and #Create a new indices list
     train_loss = Metric('train_loss')
     train_accuracy = Metric('train_accuracy')
+    
     rank = hvd.rank()
     _losses = list()
     torch.cuda.synchronize()
