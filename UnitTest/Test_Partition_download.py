@@ -34,7 +34,7 @@ if __name__ == '__main__':
     rank = hvd.rank()
     size = hvd.size()
 
-    print("rank {0} and size{1}".format(rank, size))
-    #train_folder = "/home/rongon/Documents/research/shuffling/Codes/ProjectCode/natural_image/Partition_Folder"
-    #target_local_train_folder = "/home/rongon/Documents/research/shuffling/Codes/ProjectCode/natural_image/Partition_Folder"
-    #download_toLocal(train_folder, target_local_train_folder, rank, size)
+    #print("rank {0} and size{1}".format(rank, size))
+    train_folder = "../natural_image/Partition_Folder"
+    target_local_train_folder = "../natural_image/Partition_Folder"
+    download_toLocal(train_folder, target_local_train_folder, rank, size)

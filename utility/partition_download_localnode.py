@@ -53,3 +53,35 @@ def download_toLocal(train_folder, target_local_train_folder, rank, size):
             rank_partition_files.append(partition_files[i])
     
     print("Rank ", rank, " will download " , len(rank_partition_files), " number of foles. Partitions are :", rank_partition_files)
+
+    # Create subfolder for each rank
+    local_folder = os.path.join(local_target_folder,str(rank))
+
+    command = "rm -r " + str(local_folder)
+    os.system(command)
+    if not os.path.exists(local_folder):
+        os.makedirs(local_folder)
+
+    # Copy partitions from root to local
+    source_file_name = os.path.join(source_folder, "class_to_idx.txt")
+    dest_file_name = os.path.join(local_folder, "class_to_idx.txt")
+    command = "cp " + str(source_file_name) + " " + str(dest_file_name)
+    os.system(command)
+
+    for i in range(0, len(rank_partition_files)):
+        zip_file_name = rank_partition_files[i]
+        source_file_name = os.path.join(source_folder, zip_file_name)
+        local_file_name = os.path.join(local_folder, zip_file_name)
+        command = "cp " + str(source_file_name) + " " + str(local_folder)
+        #print(command)
+        os.system(command)
+
+        with zipfile.ZipFile(local_file_name, 'r') as zip_ref:
+            zip_ref.extractall(local_folder)
+
+        command = "rm " + str(local_file_name)
+        #print(command)
+        os.system(command)
+
+    hvd.barrier()
+    print("Complete coping from rank {rank}")
