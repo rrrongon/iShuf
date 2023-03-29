@@ -16,8 +16,6 @@ from mpi4py import MPI
 import torch.optim as optim
 import torch.nn.functional as F
 
-from torch.utils.tensorboard import SummaryWriter
-
 class Metric(object):
     def __init__(self, name):
         self.name = name
@@ -306,8 +304,6 @@ if __name__ == '__main__':
             _train_dataset, batch_size=allreduce_batch_size,
             sampler=_train_sampler)
 
-    # Horovod: write TensorBoard logs on first worker.
-    log_writer = SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
     '''
     print("train loader:\n")
     it = iter(_train_loader)
