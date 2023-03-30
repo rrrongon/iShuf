@@ -37,10 +37,13 @@ class split_data:
 
         f = open('config.json')
         configs =json.load(f)
-        self.root_dir = configs["ROOT_DATADIR"]["dir"]
-        self.source_data_dir = configs["ROOT_DATADIR"]["data_dir"]
+        #self.root_dir = configs["ROOT_DATADIR"]["dir"] #Partition
+        self.root_dir = configs["ROOT_DATADIR"]["partiion_dir"]
+        #self.source_data_dir = configs["ROOT_DATADIR"]["data_dir"] # Folder name by rank number
+        self.source_data_dir = self.root_dir + str(rank)
 
-        self.target_folder = os.path.join(self.root_dir,'data_2')
+        folder_name = str(rank)+"_data_2"
+        self.target_folder = os.path.join(self.root_dir, folder_name) # target folder must be inside the rank folder that is self.source_data_dir
         if not os.path.exists(self.target_folder):
             os.mkdir(self.target_folder)
         self.train_data_dir = os.path.join(self.target_folder, 'train')
@@ -108,6 +111,10 @@ class split_data:
     def _get_folders(self):
         return self.train_data_dir, self.val_data_dir
 if __name__ == '__main__':
+
+    hvd.init()
+    rank = hvd.rank()
+    size = hvd.size()
     sp = split_data()
     sp.split()
     sp._get_folders()

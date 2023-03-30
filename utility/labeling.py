@@ -1,4 +1,5 @@
 import os, json, csv 
+import horovod.torch as hvd
 
 class SampleLabeling:
     def __init__(self, dir, root_dir):
@@ -53,9 +54,14 @@ class SampleLabeling:
                         csvwriter.writerow([_img_path,label])
 
 if __name__ == '__main__':
+    hvd.init()
+    rank = hvd.rank()
+    size = hvd.size()
+
     f = open('config.json')
     configs =json.load(f)
-    root_dir = configs["ROOT_DATADIR"]["train_dir"]
+    root_dir = configs["ROOT_DATADIR"]["partiion_dir"]
+    root_dir = root_dir + str(rank) + "_data_2/"
     train_dir = root_dir + "train/"
     SL1 = SampleLabeling(train_dir, root_dir)
     val_dir = root_dir + "val/"

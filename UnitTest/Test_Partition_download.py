@@ -35,6 +35,6 @@ if __name__ == '__main__':
     size = hvd.size()
 
     #print("rank {0} and size{1}".format(rank, size))
-    train_folder = "../natural_image/Partition_Folder"
-    target_local_train_folder = "../natural_image/Partition_Folder"
+    train_folder = "./natural_image/Partition_Folder/"
+    target_local_train_folder = "./natural_image/Partition_Folder/"
     download_toLocal(train_folder, target_local_train_folder, rank, size)

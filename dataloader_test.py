@@ -290,7 +290,9 @@ if __name__ == '__main__':
     configs =json.load(f)
     torch.manual_seed(configs["MODEL"]["seed"])
 
-    root_dir = configs["ROOT_DATADIR"]["train_dir"]
+    #root_dir = configs["ROOT_DATADIR"]["train_dir"]
+    root_dir = configs["ROOT_DATADIR"]["partiion_dir"]
+    root_dir = root_dir + str(rank) + "_data_2/"
     _train_dir = root_dir + "train/"
     _label_file_path = os.path.join(root_dir, "train_filepath.csv")
     _train_dataset = CustomDataset(img_dir=_train_dir, label_file_path=_label_file_path)
@@ -309,7 +311,6 @@ if __name__ == '__main__':
     it = iter(_train_loader)
     print(next(it))
     '''
-
     _val_dir = root_dir + "val/"
     _label_file_path = os.path.join(root_dir, "val_filepath.csv")
     _val_dataset = CustomDataset(img_dir=_val_dir, label_file_path=_label_file_path)
@@ -325,6 +326,8 @@ if __name__ == '__main__':
     it = iter(_val_loader)
     print(next(it))
     '''
+    print("training directory of rank {0} is {1}. training set len {2} and val set len{3}".format(rank,root_dir,len(_train_dataset), len(_val_dataset)))
+
     wd = 0.00005
     use_adasum = 0
     MPI.COMM_WORLD.Barrier()
