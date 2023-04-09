@@ -1,8 +1,14 @@
 from mpi4py import MPI
 import sys
-sys.path.append('..')
-from InterNodeCommunication import NodeCommunication
+import os,json
 
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+# Add the parent directory to the system path
+sys.path.insert(0, parent_dir)
+
+from InterNodeCommunication import NodeCommunication
+from dataloader_test import CustomDataset
 from mpi4py import MPI
 '''
 comm = MPI.COMM_WORLD
@@ -19,6 +25,9 @@ elif rank == 1:
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
+f = open('config.json')
+configs =json.load(f)
+
 dataset = list()
 batch_size = 32
 no_of_batch = 4
@@ -32,8 +41,32 @@ if rank == 1:
     for i in range(batch_size):
         assert(dataset[i] == (rank*batch_size)+i), "Error data insertion in rank {rank}"
 
-fraction = 0.2
+#root_dir = configs["ROOT_DATADIR"]["train_dir"]
+root_dir = configs["ROOT_DATADIR"]["partiion_dir"]
+root_dir = root_dir + str(rank) + "_data_2/"
+_train_dir = root_dir + "train/"
+_label_file_path = os.path.join(root_dir, "train_filepath.csv")
+_train_dataset = CustomDataset(img_dir=_train_dir, label_file_path=_label_file_path)
+
+fraction = 0.3
 seed = 10
 print("proc: {0}".format(rank))
-nc = NodeCommunication(dataset,batch_size, fraction, seed)
+nc = NodeCommunication(_train_dataset, batch_size, fraction, seed)
+
+nc.scheduling(3)
 nc._communicate(batch_index=5)
+print("Rank#{0} is done in Communicating".format(rank))
+sys.stdout.flush()
+comm.Barrier()
+
+nc.sync_recv()
+comm.Barrier()
+
+#if rank ==0:
+#    comm.Abort()
+#nc.sync_recv()
+nc.sync_send()
+comm.Barrier()
+
+nc.clean_sent_samples()
+comm.Barrier()

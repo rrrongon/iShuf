@@ -15,6 +15,7 @@ import PIL
 from mpi4py import MPI
 import torch.optim as optim
 import torch.nn.functional as F
+import sys
 
 class Metric(object):
     def __init__(self, name):
@@ -48,7 +49,7 @@ class CustomImageDataset(Dataset):
             image = self.transform(image)
         if self.target_transform:
             label = self.target_transform(label)
-        return image, label
+        return image, label, img_path
 
 #training_data = datasets.FashionMNIST(
 #    root="data",
@@ -104,6 +105,17 @@ plt.show()'''
 def __get_image_count(img_dir):
     os.listdir(img_dir)
 
+def rank_replace_img_path(rank, old_path):
+    # split the path into its components
+    path_components = old_path.split("/")
+    # replace the 3rd component with "rank_data_2"
+    path_components[3] = str(rank)+"_data_2"
+
+    # reconstruct the path
+    new_path = os.path.join(*path_components)
+    print("Old path#{0} and new path#{1}".format(old_path, new_path))
+    return new_path
+
 class CustomDataset(Dataset):
     def __init__(self, img_dir, label_file_path, transform = None, target_transform=None):
         super().__init__()
@@ -114,7 +126,7 @@ class CustomDataset(Dataset):
             print("Could not open file {0}".format(label_file_path))
             exit(1)
         self.transform = transforms.Compose([
-            transforms.Resize((224, 224)),
+            transforms.Resize((200, 200)),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
@@ -135,11 +147,96 @@ class CustomDataset(Dataset):
         
         y_one_hot = torch.zeros(10)
         y_one_hot[label] = 1
-        return image, y_one_hot
-def accuracy(output, target):
-    # get the index of the max log-probability
-    pred = output.max(1, keepdim=True)[1]
-    return pred.eq(target.view_as(pred)).cpu().float().mean()
+        return image, y_one_hot, img_path
+
+    def add_new_item(self, rank, img_tensor, idx, path, label):
+
+        #after receiving an item from another node via MPI need to add to existing dataset object to train
+        replaced_path = rank_replace_img_path(rank, path)
+        new_item = {'path': replaced_path.encode('utf-8'), 'label': label}
+        #self._labels.loc[n] = new_item
+        self._labels = self._labels.append(new_item, ignore_index=True)
+        print("Rank# {0} is adding labels and item detail {1}\n".format(rank, new_item))
+        #tensor_to_image = transforms.ToPILImage()
+        #image = tensor_to_image(img_tensor)
+
+        # Save image to directory
+        #image.save(path)
+        #print("Rank#{0} Image saved path {1}\n".format(rank, path))
+
+    def add_new_samples(self, rank, recvd_samples):
+        new_items = list()
+        try:
+            for sample in recvd_samples:
+                path = sample['path']
+                label = torch.argmax(sample['class_name']).item()
+                replaced_path = rank_replace_img_path(rank, path)
+                new_item = {'path': replaced_path.encode('utf-8'), 'label': label}
+                new_items.append(new_item)
+            print("Before label size of rank#{0}: {1}".format(rank, self._labels.size ))
+            self._labels = pd.concat([self._labels, pd.DataFrame(new_items)], ignore_index=True)
+            print("After addinf items label size of rank#{0}: {1}".format(rank, self._labels.size ))
+            sys.stdout.flush()
+        except Exception as e:
+            print("Error in adding new samples in rank#{0}".format(rank))
+            print("Exception on Rank#{0}".format(str(e)))
+            sys.stdout.flush()
+            hvd.Abort()
+
+        #Need to save the tensors to image path
+        try:
+            for sample in recvd_samples:
+                tensor_to_image = transforms.ToPILImage()
+                image = tensor_to_image(sample['sample'])
+                path = sample['path']
+                replaced_path = rank_replace_img_path(rank, path)
+                image.save(replaced_path)
+                print("Rank#{0} Image saved path {1}\n".format(rank, path))
+                sys.stdout.flush()
+        except Exception as e:
+            print("Error in saving Image in rank#{0} and path#{1}".format(rank, rank_replace_img_path(rank, path)))
+            print("Exception on Rank#{0}".format(str(e)))
+            sys.stdout.flush()
+            hvd.Abort()
+
+    def delete_an_item(self, rank, idx):
+        print("Rank#{0} is trying to remove an item with index#{1}".format(rank, idx))
+
+        #remove from label dataframe
+        self._labels = self._labels.drop(idx)
+        #remove from storage
+        img_path = os.path.join(self.img_dir, self._labels.iloc[idx,0])
+        print("Rank#{0} deleted the image from storage path#{1}. Please check...".format(rank, path))
+        os.remove(img_path)
+
+    def remove_old_samples(self, rank, clean_list):
+        full_paths = list()
+        #before dropping copy the directory of the images
+        selected_rows = self._labels.iloc[clean_list]
+        try:
+            for index, row in selected_rows.iterrows():
+                path = row.iloc[0]
+                img_path = os.path.join(self.img_dir, path)
+                full_paths.append(img_path)
+
+            #drop from the dataframe
+            print("Before dropping label size of rank#{0}: {1}".format(rank, self._labels.size ))
+            df = self._labels.drop(clean_list) 
+            self._labels=None
+            self._labels = df
+            df = None
+            print("After dropping label size of rank#{0}: {1}".format(rank, self._labels.size ))
+
+            #delete images from the local storage
+            for file_path in full_paths:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    print(f"Rank#{rank} Deleted file: {file_path}")
+                else:
+                    print(f"Rank#{rank} File {file_path} does not exist")
+        except Exception as e:
+            print(f" Rank#{rank} Exception# {str(e)}")
+            exit(1)
 
 def accuracy(output, target):
     # get the index of the max log-probability
@@ -161,15 +258,17 @@ def train(epoch):
     _batch_size = configs["MODEL"]["batch_size"] 
     #train_dataset.next_epoch() ## Update the dataset to use the newly received samples
     #train_sampler.set_epoch(epoch) ## Set the epoch in sampler and #Create a new indices list
-
+    #train_sampler.set_epoch(epoch)
 
     rank = hvd.rank()
     world_size = hvd.size()
     _batch_size = configs["MODEL"]["batch_size"]
     _validation_iteration_number = 10
 
+    #train_sampler.next_epoch()
+    
     torch.cuda.synchronize()
-    for batch_idx, (data, target) in enumerate(_train_loader):
+    for batch_idx, (data, target, path) in enumerate(_train_loader):
         print("batch no: {0}, length of batch: {1}, target len: {2}, each target len{3}".format(batch_idx, len(data), len(target), len(target[0])))        
         if _is_cuda:
             data, target = data.cuda(), target.cuda()
@@ -237,7 +336,7 @@ def train(epoch):
                     val_acc = 0.0
 
                     with torch.no_grad():
-                        for val_data, val_target in _val_loader:
+                        for (val_data, val_target, path) in _val_loader:
                             val_data, val_target = val_data.to(device), val_target.to(device)
                             val_output = model(val_data)
                             val_loss += loss_fn(val_output, val_target).item()
@@ -319,7 +418,7 @@ if __name__ == '__main__':
     _val_sampler = dsampler(
             _val_dataset, num_replicas=hvd.size(), rank=hvd.rank())
     _val_loader = torch.utils.data.DataLoader(
-            _train_dataset, batch_size=allreduce_batch_size,
+            _val_dataset, batch_size=allreduce_batch_size,
             sampler=_val_sampler)
     '''
     print("test loader:\n")
