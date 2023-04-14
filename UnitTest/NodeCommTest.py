@@ -48,25 +48,27 @@ _train_dir = root_dir + "train/"
 _label_file_path = os.path.join(root_dir, "train_filepath.csv")
 _train_dataset = CustomDataset(img_dir=_train_dir, label_file_path=_label_file_path)
 
+EPOCHS = 50
 fraction = 0.3
 seed = 10
 print("proc: {0}".format(rank))
 nc = NodeCommunication(_train_dataset, batch_size, fraction, seed)
 
-nc.scheduling(3)
-nc._communicate(batch_index=5)
-print("Rank#{0} is done in Communicating".format(rank))
-sys.stdout.flush()
-comm.Barrier()
+for epoch in range(EPOCHS):
+    nc.scheduling(epoch)
+    nc._communicate(epoch)
+    print("Rank#{0} is done in Communicating".format(rank))
+    sys.stdout.flush()
+    comm.Barrier()
 
-nc.sync_recv()
-comm.Barrier()
+    nc.sync_recv()
+    comm.Barrier()
 
-#if rank ==0:
-#    comm.Abort()
-#nc.sync_recv()
-nc.sync_send()
-comm.Barrier()
+    #if rank ==0:
+    #    comm.Abort()
+    #nc.sync_recv()
+    nc.sync_send()
+    comm.Barrier()
 
-nc.clean_sent_samples()
-comm.Barrier()
+    nc.clean_sent_samples()
+    comm.Barrier()

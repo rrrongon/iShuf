@@ -81,7 +81,7 @@ class NodeCommunication:
 
         self.comm.Barrier()
 
-        print("Rank#{0} target list#{1}".format(self.rank, target_ranks))
+        #print("Rank#{0} target list#{1}".format(self.rank, target_ranks))
         
         #print("Rank#{0} pack list#{1}".format(self.rank, comm_packs))
 
@@ -107,7 +107,7 @@ class NodeCommunication:
             # methods 1: shuffle randomly
             # method 2: external sequence
         
-        print("Rank#{0} batch_size#{1}".format(self.rank, len(sample_batch)))
+        #print("Rank#{0} batch_size#{1}".format(self.rank, len(sample_batch)))
         self.comm.Barrier()
             # method 1:
         # 4. send data
@@ -121,7 +121,7 @@ class NodeCommunication:
 
                 send_data = {'idx': idx, 'sample': sample, 'path': path, 'class_name': label}
                 req = self.comm.isend(send_data, dest= target_rank, tag=idx)
-                print(f"Process #{self.rank}, sending message to {target_rank} with tag {idx}: ")
+                #print(f"Process #{self.rank}, sending message to {target_rank} with tag {idx}: ")
                 sys.stdout.flush()
                 self.send_requests.append(req)
                 self.clean_list.append(self.permutation[idx])
@@ -134,9 +134,9 @@ class NodeCommunication:
                 source_rank = status.Get_source()
                 received_data = pickle.loads(buff)
 
-                print(f"Process #{self.rank}, received message from {source_rank} with tag {idx}: ")
-                print(received_data)
-                sys.stdout.flush()
+                #print(f"Process #{self.rank}, received message from {source_rank} with tag {idx}: ")
+                #print(received_data)
+                #sys.stdout.flush()
                 #buf = np.zeros(1<<20,dtype=np.uint8)
                 #req = self.comm.irecv(buf, source = MPI.ANY_SOURCE, tag=idx)
                 #data = req.wait()
@@ -173,8 +173,8 @@ class NodeCommunication:
                     if self.rank == 0:
                         self.comm.Abort()
 
-        print("Rank#{0} is done receiving.".format(self.rank))        
-        sys.stdout.flush()
+        #print("Rank#{0} is done receiving.".format(self.rank))        
+        #sys.stdout.flush()
     
     def scheduling(self, epoch):
         if self.fraction == 0:
@@ -190,12 +190,12 @@ class NodeCommunication:
                 req.wait()
             self.send_requests.clear()
 
-        print("Rank#{0} is done Sending.".format(self.rank))
-        sys.stdout.flush()
+        #print("Rank#{0} is done Sending.".format(self.rank))
+        #sys.stdout.flush()
 
     def clean_sent_samples(self):
         self.dataset.remove_old_samples(self.rank, self.clean_list)
         self.clean_list.clear()
-        print("Rank#{0} is done sleaning.".format(self.rank))
-        sys.stdout.flush()
+       # print("Rank#{0} is done sleaning.".format(self.rank))
+        #sys.stdout.flush()
         
