@@ -17,6 +17,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import sys
 from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
+import time
 
 #File Import
 from InterNodeCommunication import NodeCommunication
@@ -128,9 +129,9 @@ class CustomDataset(Dataset):
         self.img_dir = img_dir
         try:
             self._labels = pd.read_csv(label_file_path)
-            df = self._labels.head(820)
-            self._labels = df
-            df = None
+            #df = self._labels.head(820)
+            #self._labels = df
+            #df = None
             #random_df = self._labels.sample(n=300, random_state=42)
             #self._labels = random_df
             #random_df = None
@@ -322,12 +323,9 @@ def train(epoch):
         device = torch.device("cpu")   
     print(f"Rank#{rank} available device#{device}")
 
-    # Inter node communication Initialize loss and accuracy over all the ranks through horovod
-    #train_loss = Metric('train_loss')
-    #train_accuracy = Metric('train_accuracy')
 
     #Inter process communication initialization
-    nc.scheduling(epoch)
+    #nc.scheduling(epoch)
     
 
     for batch_idx, (data, target, path) in enumerate(_train_loader):
@@ -340,35 +338,35 @@ def train(epoch):
         #Prepare data for each process by spliting
         train_data_splits = torch.split(data, _batch_size) #create split chunk of size batch size. Then by rank each rank can process a part of chunk of batch_size
         train_target_splits = torch.split(target, _batch_size)
-        sys.stdout.flush()
 
         if len(train_data_splits) > 0:
             cnt = 0
             for i in range(len(train_data_splits)):
                 
-                process_train_data = train_data_splits[i] #data to train for ranks
-                process_train_target = train_target_splits[i] #label of those data
+                if i % hvd.size() ==  rank:
+                    process_train_data = train_data_splits[i] #data to train for ranks
+                    process_train_target = train_target_splits[i] #label of those data
 
-                #tackle last mini batch
-                if len(process_train_data) != _batch_size:
-                    continue #currently skipping last batch. Later tackle using proper method
+                    #tackle last mini batch
+                    if len(process_train_data) != _batch_size:
+                        continue #currently skipping last batch. Later tackle using proper method
             
-                #check length of data and target are same
-                assert len(process_train_data) == len(process_train_target) , "Error in splitting of data and target "
+                    #check length of data and target are same
+                    assert len(process_train_data) == len(process_train_target) , "Error in splitting of data and target "
 
-                output = model(process_train_data)
-                loss = loss_fn(output, process_train_target)
+                    output = model(process_train_data)
+                    loss = loss_fn(output, process_train_target)
 
-                # compute gradients
-                loss.div_(math.ceil(float(len(data)) / _batch_size))
-                loss.backward()
+                    # compute gradients
+                    loss.backward()
+                    loss.div_( (hvd.size()*math.ceil(float(len(data)))) / (_batch_size/hvd.size()))
 
-                acc = custom_accuracy(output, process_train_target)
+                    acc = custom_accuracy(output, process_train_target)
 
-                print("----------------------------")
+                    print("----------------------------")
         
-                acc_res.update(acc)
-                loss_res.update(loss.item())
+                    acc_res.update(acc)
+                    loss_res.update(loss.item())
 
                 if (batch_idx + 1) % _validation_iteration_number == 0:
                     model.eval()
@@ -398,6 +396,7 @@ def train(epoch):
         # update model parameters
         hvd.barrier()
         optimizer.step()
+
         torch.cuda.synchronize()
 
         #check model param accross different ranks
@@ -405,17 +404,17 @@ def train(epoch):
         #    print(f"Rank#{rank} model param name#{param_name} and value#{param}\n")
 
         #Internode sync
-        nc._communicate(epoch)
-        torch.cuda.synchronize()
+        #nc._communicate(epoch)
+        #torch.cuda.synchronize()
 
-        nc.sync_recv()
-        torch.cuda.synchronize()
+        #nc.sync_recv()
+        #torch.cuda.synchronize()
 
-        nc.sync_send()
-        torch.cuda.synchronize()
+        #nc.sync_send()
+        #torch.cuda.synchronize()
 
-        nc.clean_sent_samples()
-        torch.cuda.synchronize()
+        #nc.clean_sent_samples()
+        #torch.cuda.synchronize()
 
         '''
             #accuracy_iter = accuracy(output, target_batch)
@@ -438,31 +437,39 @@ def train(epoch):
 
 if __name__ == '__main__':
     
-    _is_cuda = torch.cuda.is_available()
-    if not _is_cuda:
-        print("There is no CUDA available\n")
-        exit(1)
-
     hvd.init()
     rank = hvd.rank()
     f = open('config.json')
     configs =json.load(f)
     torch.manual_seed(configs["MODEL"]["seed"])
 
-    #root_dir = configs["ROOT_DATADIR"]["train_dir"]
+    root_dir = configs["ROOT_DATADIR"]["train_dir"]
+    '''
+    -partial
     root_dir = configs["ROOT_DATADIR"]["partiion_dir"]
     root_dir = root_dir + str(rank) + "_data_2/"
+    '''
+
     _train_dir = root_dir + "train/"
     _label_file_path = os.path.join(root_dir, "train_filepath.csv")
     _train_dataset = CustomDataset(img_dir=_train_dir, label_file_path=_label_file_path)
 
-    allreduce_batch_size = configs["MODEL"]["no_of_batches"] * configs["MODEL"]["batch_size"]
+    _no_of_intraNode_workers = hvd.size() #configs["MODEL"]["no_of_batches"]
+    _batch_size = configs["MODEL"]["batch_size"]
+
+    _intraNode_batch_size = _no_of_intraNode_workers * _batch_size
+
+    _is_cuda = torch.cuda.is_available()
+    if not _is_cuda:
+        print("There is no CUDA available\n")
+        exit(1)
+
     #custom_sampler = CustomSampler(_train_dataset)
     #_train_sampler = dsampler(
     #        _train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
     _train_loader = torch.utils.data.DataLoader(
-            _train_dataset, batch_size=allreduce_batch_size,
-            sampler=SequentialSampler(_train_dataset))
+            _train_dataset, batch_size=_intraNode_batch_size,
+            sampler=RandomSampler(_train_dataset))
 
     '''
     print("train loader:\n")
@@ -477,8 +484,8 @@ if __name__ == '__main__':
    # _val_sampler = dsampler(
     #        _val_dataset, num_replicas=hvd.size(), rank=hvd.rank())
     _val_loader = torch.utils.data.DataLoader(
-            _val_dataset, batch_size=allreduce_batch_size,
-            sampler=SequentialSampler(_val_dataset))
+            _val_dataset, batch_size= _intraNode_batch_size,
+            sampler=RandomSampler(_val_dataset))
     '''
     print("test loader:\n")
     it = iter(_val_loader)
@@ -493,10 +500,9 @@ if __name__ == '__main__':
     num_ftrs = model.fc.in_features
     model.fc = nn.Linear(num_ftrs, 10)
     
-    lr_scaler = configs["MODEL"]["batch_size"] * hvd.size() if not use_adasum else 1
-    base_lr = 0.125
-    momentum = 0.9
-
+    base_lr = 0.1
+    momentum = 0.2
+    scaled_lr = base_lr * hvd.size()
     if _is_cuda:
         # Move model to GPU.
         model.cuda()
@@ -506,7 +512,7 @@ if __name__ == '__main__':
 
     MPI.COMM_WORLD.Barrier()
     # Horovod: scale learning rate by the number of GPUs.
-    optimizer = optim.SGD(model.parameters(), lr=base_lr,
+    optimizer = optim.SGD(model.parameters(), lr=scaled_lr,
                           momentum=momentum, weight_decay=wd)
 
     optimizer = hvd.DistributedOptimizer(optimizer, named_parameters=model.named_parameters())
@@ -517,14 +523,31 @@ if __name__ == '__main__':
     hvd.broadcast_parameters(model.state_dict(), root_rank=0)
     hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
+    '''
     #Inter node communication initialization
     batch_size = configs["MODEL"]["batch_size"]
     fraction = 0.2
     seed = 41
     nc = NodeCommunication(_train_dataset, batch_size, fraction, seed)
+    '''
 
-    epoch_no = 300
+    epoch_no = 50
+    total_duration = 0
+
     for epoch in range(epoch_no):
         print("------------------- Epoch {0}--------------------\n".format(epoch))
+        start_time = time.time()
+
         train(epoch)
+
+        end_time = time.time()
+        duration = end_time - start_time
+        total_duration += duration
+
         hvd.barrier()
+        if rank==0:
+            print("Iteration {0} took {1:.2f} seconds".format(epoch, duration))
+
+        avg_duration = total_duration / epoch_no
+        if rank==0:
+            print("Average iteration duration: {0:.2f} seconds".format(avg_duration))
