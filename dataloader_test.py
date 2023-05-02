@@ -18,6 +18,10 @@ import torch.nn.functional as F
 import sys
 from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
 import time
+import torch.utils.data.distributed as DS
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
 
 #File Import
 from InterNodeCommunication import NodeCommunication
@@ -363,36 +367,37 @@ def train(epoch):
 
                     acc = custom_accuracy(output, process_train_target)
 
-                    print("----------------------------")
         
                     acc_res.update(acc)
                     loss_res.update(loss.item())
 
-                if (batch_idx + 1) % _validation_iteration_number == 0:
-                    model.eval()
+            #    if (batch_idx + 1) % _validation_iteration_number == 0:
+            #        model.eval()
                     # Compute validation loss and accuracy
-                    val_loss_met = Result('val_loss')
-                    val_acc_met = Result('val_accuracy')
+            #        val_loss_met = Result('val_loss')
+            #        val_acc_met = Result('val_accuracy')
                     
-                    val_loss = 0.0
-                    val_acc = 0.0
+            #        val_loss = 0.0
+            #        val_acc = 0.0
 
-                    with torch.no_grad():
-                        for (val_data, val_target, path) in _val_loader:
-                            val_data, val_target = val_data.cuda(), val_target.cuda()
-                            val_output = model(val_data)
-                            val_acc = custom_accuracy(val_output, val_target)
-                            val_loss = loss_fn(val_output, val_target)
+            #        with torch.no_grad():
+            #            for (val_data, val_target, path) in _val_loader:
+            #                val_data, val_target = val_data.cuda(), val_target.cuda()
+            #                val_output = model(val_data)
+            #                val_acc = custom_accuracy(val_output, val_target)
+            #                val_loss = loss_fn(val_output, val_target)
                             
-                            val_acc_met.update(val_acc)
-                            val_loss_met.update(val_loss.item())
+            #                val_acc_met.update(val_acc)
+            #                val_loss_met.update(val_loss.item())
                     
-                        if rank==0:
-                            print(f"Validation Loss: {val_loss_met.avg()}, Validation Accuracy: {val_acc_met.avg()}")
+            #            if rank==0:
+            #                print(f"Validation Loss: {val_loss_met.avg()}, Validation Accuracy: {val_acc_met.avg()}")
             
-                    model.train()
+            #        model.train()
 
-        print(f"Rank#{rank} accuracy#{acc_res.avg()} and loss#{loss_res.avg()}")
+        print(f"Epoch#{epoch}: Rank#{rank} accuracy#{acc} and loss#{loss.item()}")
+        print(f"Average Rank#{rank} accuracy#{acc_res.avg()} and loss#{loss_res.avg()}")
+
         # update model parameters
         hvd.barrier()
         optimizer.step()
@@ -416,6 +421,9 @@ def train(epoch):
         #nc.clean_sent_samples()
         #torch.cuda.synchronize()
 
+        plt_train_acc.append(acc)
+        plt_train_loss.append(loss.item())
+
         '''
             #accuracy_iter = accuracy(output, target_batch)
             _, predicted = torch.max(output, 1)
@@ -434,6 +442,38 @@ def train(epoch):
             loss.div_(math.ceil(float(len(data)) / _batch_size))
             loss.backward()
         '''
+def validation(epoch):
+    #if epoch % 5 = 0:
+    model.eval()
+    # Compute validation loss and accuracy
+    val_loss_met = Result('val_loss')
+    val_acc_met = Result('val_accuracy')
+
+    val_loss = 0.0
+    val_acc = 0.0
+
+    with torch.no_grad():
+        for (val_data, val_target, path) in _val_loader:
+            val_data, val_target = val_data.cuda(), val_target.cuda()
+            val_output = model(val_data)
+            val_acc = custom_accuracy(val_output, val_target)
+            val_loss = loss_fn(val_output, val_target)
+
+            val_acc_met.update(val_acc)
+            val_loss_met.update(val_loss.item())
+
+            if rank==0:
+                print("````````````````````````````````````````````````")
+                print(f"Epoch# {epoch}: Validatio acc#{val_acc} and val loss#{val_loss.item()}")
+                print(f"Average Validation Loss: {val_loss_met.avg()}, Validation Accuracy: {val_acc_met.avg()}")
+                print("`````````````````````````````````````````````````````````````````````")
+                sys.stdout.flush()
+
+                plt_val_acc.append(val_acc)
+                plt_val_loss.append(val_loss.item())
+
+        model.train()
+
 
 if __name__ == '__main__':
     
@@ -465,11 +505,11 @@ if __name__ == '__main__':
         exit(1)
 
     #custom_sampler = CustomSampler(_train_dataset)
-    #_train_sampler = dsampler(
-    #        _train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+    _train_sampler = dsampler(
+            _train_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle=True)
     _train_loader = torch.utils.data.DataLoader(
             _train_dataset, batch_size=_intraNode_batch_size,
-            sampler=RandomSampler(_train_dataset))
+            sampler= _train_sampler)
 
     '''
     print("train loader:\n")
@@ -481,11 +521,11 @@ if __name__ == '__main__':
     _val_dataset = CustomDataset(img_dir=_val_dir, label_file_path=_label_file_path)
 
     #custom_sampler = CustomSampler(_val_dataset)
-   # _val_sampler = dsampler(
-    #        _val_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+    _val_sampler = dsampler(
+            _val_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle = True)
     _val_loader = torch.utils.data.DataLoader(
             _val_dataset, batch_size= _intraNode_batch_size,
-            sampler=RandomSampler(_val_dataset))
+            sampler= _val_sampler)
     '''
     print("test loader:\n")
     it = iter(_val_loader)
@@ -500,7 +540,7 @@ if __name__ == '__main__':
     num_ftrs = model.fc.in_features
     model.fc = nn.Linear(num_ftrs, 10)
     
-    base_lr = 0.1
+    base_lr = 0.0125
     momentum = 0.2
     scaled_lr = base_lr * hvd.size()
     if _is_cuda:
@@ -531,6 +571,14 @@ if __name__ == '__main__':
     nc = NodeCommunication(_train_dataset, batch_size, fraction, seed)
     '''
 
+    plt_train_acc = list()
+    plt_train_loss = list()
+    plt_train_time = list()
+
+    plt_val_acc = list()
+    plt_val_loss = list()
+
+
     epoch_no = 50
     total_duration = 0
 
@@ -547,7 +595,36 @@ if __name__ == '__main__':
         hvd.barrier()
         if rank==0:
             print("Iteration {0} took {1:.2f} seconds".format(epoch, duration))
+            plt_train_time.append(duration)
 
         avg_duration = total_duration / epoch_no
         if rank==0:
             print("Average iteration duration: {0:.2f} seconds".format(avg_duration))
+        
+    # Draw plot
+    if rank ==0:
+        fig, ax = plt.subplots(3, 1, figsize=(8, 10))
+        fig.suptitle("Process Results")
+
+        # Plot the training loss and accuracy
+        ax[0].plot(np.arange(len(plt_train_loss)), plt_train_loss, label='Training Loss')
+        ax[0].plot(np.arange(len(plt_train_acc)), plt_train_acc, label='Training Accuracy')
+        ax[0].set_xlabel('Epochs')
+        ax[0].set_ylabel('Loss / Accuracy')
+        ax[0].legend()
+
+        # Plot the validation loss and accuracy
+        ax[1].plot(np.arange(len(plt_val_loss)), plt_val_loss, label='Validation Loss')
+        ax[1].plot(np.arange(len(plt_val_acc)), plt_val_acc, label='Validation Accuracy')
+        ax[1].set_xlabel('Epochs')
+        ax[1].set_ylabel('Loss / Accuracy')
+        ax[1].legend()
+
+        # Plot the training time
+        ax[2].plot(np.arange(len(plt_train_time)), plt_train_time, label='Training Time')
+        ax[2].set_xlabel('Epochs')
+        ax[2].set_ylabel('Time')
+        ax[2].legend()
+
+        plt.savefig('Basic_Shuffling.png')
+
