@@ -306,6 +306,56 @@ class Result(object):
     def avg(self):
         return self.sum/self.n
 
+def plot_timeBreakdown(epochs, plt_comp_time, plt_reading_time):
+
+    plt_total_time = np.add(plt_comp_time, plt_reading_time)
+    barWidth = 0.85
+
+    # Create the stacked bar chart
+    plt.figure(figsize=(10, 6))
+    plt.bar(range(epochs), plt_reading_time, color='#5DA5DA', edgecolor='white', width=barWidth)
+    plt.bar(range(epochs), plt_comp_time, bottom=plt_reading_time, color='#60BD68', edgecolor='white', width=barWidth)
+    plt.bar(range(epochs), plt_total_time, color='grey', alpha=0.2, edgecolor='white', width=barWidth)
+
+    # Add labels and legend
+    plt.xlabel('Epochs')
+    plt.xticks(range(epochs))
+    plt.ylabel('Time (seconds)')
+    plt.title('Time breakdown per epoch')
+    plt.legend(['Reading time', 'Computation time', 'Total time'], loc='upper left')
+
+
+    # Show the plot
+    plt.savefig('basic_time_breakdown.png')
+
+
+def plot_comp_timeBreakdown(epoch_no, plt_total_comp_output_time, plt_total_comp_loss_time,
+                            plt_total_comp_backward_time, plt_total_comp_loss_div_time):
+
+    epochs = len(plt_total_comp_output_time)
+    plt_total_time = np.add(np.add(np.add(plt_total_comp_output_time, plt_total_comp_loss_time), plt_total_comp_backward_time), plt_total_comp_loss_div_time)
+    barWidth = 0.85
+
+    # Create the stacked bar chart
+    plt.figure(figsize=(10, 6))
+    plt.bar(range(epochs), plt_total_comp_output_time, color='#5DA5DA', edgecolor='white', width=barWidth)
+    plt.bar(range(epochs), plt_total_comp_loss_time, bottom=plt_total_comp_output_time, color='#FAA43A', edgecolor='white', width=barWidth)
+    plt.bar(range(epochs), plt_total_comp_backward_time, bottom=np.add(plt_total_comp_output_time, plt_total_comp_loss_time), color='#60BD68', edgecolor='white', width=barWidth)
+    plt.bar(range(epochs), plt_total_comp_loss_div_time, bottom=np.add(np.add(plt_total_comp_output_time, plt_total_comp_loss_time), plt_total_comp_backward_time), color='#F17CB0', edgecolor='white', width=barWidth)
+    plt.bar(range(epochs), plt_total_time, color='grey', alpha=0.2, edgecolor='white', width=barWidth)
+
+    # Add labels and legend
+    plt.xlabel('Epochs')
+    plt.xticks(range(epochs))
+    plt.ylabel('Time (seconds)')
+    plt.title('Time breakdown per epoch')
+    plt.legend(['Computation output time', 'Computation loss time', 'Computation backward time', 'Computation loss_div time', 'Total time'], loc='upper right')
+
+
+    # Show the plot
+    plt.savefig('Computation_breakdown_basic.png')
+
+
 import torch.nn as nn
 
 def train(epoch):
@@ -331,11 +381,24 @@ def train(epoch):
     #Inter process communication initialization
     #nc.scheduling(epoch)
     
+    loading_start_time = time.time()
+    #loading_start_time_acp = hvd.broadcast(torch.tensor(loading_start_time), root_rank=0, name='start_time').item()
+    total_computation_time = 0
+    total_reading_time = 0
+
+    total_comp_output_time = 0
+    total_comp_loss_time = 0
+    total_comp_backward_time = 0
+    total_comp_loss_div_time = 0
 
     for batch_idx, (data, target, path) in enumerate(_train_loader):
+        # data reading time
+        loading_end_time = time.time()
+        total_reading_time += (loading_end_time - loading_start_time)
+
         if _is_cuda:
             data, target = data.cuda(), target.cuda()
-
+        
         #set zero to optimizer
         optimizer.zero_grad()
 
@@ -358,12 +421,34 @@ def train(epoch):
                     #check length of data and target are same
                     assert len(process_train_data) == len(process_train_target) , "Error in splitting of data and target "
 
+                    computation_start_time = time.time()
+                    computation_output_start_time = time.time()
                     output = model(process_train_data)
+                    computation_output_end_time = time.time()
+
+                    total_comp_output_time += (computation_output_end_time - computation_output_start_time)
+
+                    computation_loss_start_time = time.time()
                     loss = loss_fn(output, process_train_target)
+                    computation_loss_end_time = time.time()
+
+                    total_comp_loss_time += (computation_loss_end_time - computation_loss_start_time)
 
                     # compute gradients
+                    computation_backward_start_time = time.time()
                     loss.backward()
+                    computation_backward_end_time = time.time()
+
+                    total_comp_backward_time += (computation_backward_end_time - computation_backward_start_time)
+
+                    computation_loss_div_start_time = time.time()
                     loss.div_( (hvd.size()*math.ceil(float(len(data)))) / (_batch_size/hvd.size()))
+                    computation_loss_div_end_time = time.time()
+
+                    total_comp_loss_div_time += (computation_loss_div_end_time - computation_loss_div_start_time)
+
+                    computation_end_time = time.time()
+                    total_computation_time += (computation_end_time - computation_start_time)
 
                     acc = custom_accuracy(output, process_train_target)
 
@@ -423,6 +508,17 @@ def train(epoch):
 
         plt_train_acc.append(acc)
         plt_train_loss.append(loss.item())
+
+        loading_start_time = time.time()
+
+    if rank==0:
+        plt_comp_time.append(total_computation_time)
+        plt_reading_time.append(total_reading_time)
+
+        plt_total_comp_output_time.append(total_comp_output_time)
+        plt_total_comp_loss_time.append(total_comp_loss_time)
+        plt_total_comp_backward_time.append(total_comp_backward_time)
+        plt_total_comp_loss_div_time.append(total_comp_loss_div_time)
 
         '''
             #accuracy_iter = accuracy(output, target_batch)
@@ -578,8 +674,16 @@ if __name__ == '__main__':
     plt_val_acc = list()
     plt_val_loss = list()
 
+    plt_comp_time = list()
+    plt_reading_time = list()
+    plt_shuffling_time = list()
 
-    epoch_no = 50
+    plt_total_comp_output_time = list()
+    plt_total_comp_loss_time = list()
+    plt_total_comp_backward_time = list()
+    plt_total_comp_loss_div_time = list()
+
+    epoch_no = 5
     total_duration = 0
 
     for epoch in range(epoch_no):
@@ -628,3 +732,8 @@ if __name__ == '__main__':
 
         plt.savefig('Basic_Shuffling.png')
 
+    if rank == 0:
+        plot_timeBreakdown(epoch_no, plt_comp_time, plt_reading_time)
+
+    if rank == 0:
+        plot_comp_timeBreakdown(epoch_no, plt_total_comp_output_time, plt_total_comp_loss_time, plt_total_comp_backward_time, plt_total_comp_loss_div_time)
