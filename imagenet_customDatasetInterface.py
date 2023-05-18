@@ -42,6 +42,7 @@ class ImageNetDataset(Dataset):
             transforms.Normalize(mean=[0.485, 0.456, 0.406],  # Normalize the image channels
                                 std=[0.229, 0.224, 0.225])
         ])
+        self.num_classes = 1000
 
 
     def __len__(self):
@@ -57,7 +58,10 @@ class ImageNetDataset(Dataset):
         if self.transform is not None:
             image = self.transform(image)
 
-        return image, label, image_path
+        y_one_hot = torch.zeros(self.num_classes)
+        y_one_hot[label] = 1
+
+        return image, y_one_hot, image_path
 
     def read_classes(self, wnids_file, words_file):
         with open(wnids_file, 'r') as file:
@@ -89,7 +93,8 @@ class ImageNetDataset(Dataset):
         try:
             for sample in recvd_samples:
                 path = sample['path']
-                label = sample['label']
+                label = torch.argmax(sample['label']).item()
+                #label = sample['label']
                 #image = sample['sample']
 
                 replaced_path = rank_replace_img_path(rank, path) #when multiple ranks

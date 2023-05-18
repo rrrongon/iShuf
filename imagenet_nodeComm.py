@@ -5,9 +5,10 @@ import math
 import torch
 import sys
 import pickle
+import horovod.torch as hvd
 
 class ImageNetNodeCommunication:
-    def __init__(self, dataset, local_batch_size = 0, fraction = 0, seed = 0):
+    def __init__(self, dataset, local_batch_size = 0, fraction = 0, seed = 0, min_train_dataset_len=0):
         self.dataset = dataset
         self.local_batch_size = local_batch_size
         self.fraction = fraction
@@ -16,7 +17,7 @@ class ImageNetNodeCommunication:
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
         random.seed(self.seed)
-        self.permutation = list(range(len(dataset)))
+        self.permutation = list(range(min_train_dataset_len))
         random.shuffle(self.permutation)
         self.clean_list = []
         self.cp_rng = np.random.RandomState(seed)
@@ -38,8 +39,15 @@ class ImageNetNodeCommunication:
             return None, None
 
         shuffle_count = math.floor(len(self.dataset) * self.fraction)
+        shuffle_count = torch.tensor(shuffle_count)
+    
+        min_shuffle_count = hvd.allreduce(shuffle_count, op=hvd.mpi_ops.Min)
+        min_shuffle_count = min_shuffle_count.item()
+        
+        print("Node comm min finding complete. Min shuffle count#{0}".format(min_shuffle_count))
+        sys.stdout.flush()
 
-        min_shuffle_count = self.comm.allreduce(shuffle_count, op=MPI.MIN)
+        #min_shuffle_count = self.comm.allreduce(shuffle_count, op=MPI.MIN)
 
         #1. Create the random sequence of target
         target_ranks = list()
@@ -53,7 +61,8 @@ class ImageNetNodeCommunication:
             target_rank = self.comm_targets[self.rank]
             target_ranks.append(target_rank)
         
-        self.comm.Barrier()
+        #self.comm.Barrier()
+        hvd.allreduce(torch.tensor(0), name="barrier")
 
         #print("Rank#{0}, Target ranks len:{1}".format(self.rank, len(target_ranks)))
         #sys.stdout.flush()
@@ -62,7 +71,8 @@ class ImageNetNodeCommunication:
         for idx in range(0, min_shuffle_count):
             sample_index = self.permutation[idx]
             sample_indexes.append(sample_index)
-        self.comm.Barrier()
+        #self.comm.Barrier()
+        hvd.allreduce(torch.tensor(0), name="barrier")
 
         # 3. Create batch of data
         sample_batch = list()
@@ -75,7 +85,8 @@ class ImageNetNodeCommunication:
 
             sample_batch.append(data_pack)
             
-        self.comm.Barrier()
+        #self.comm.Barrier()
+        hvd.allreduce(torch.tensor(0), name="barrier")
 
         for idx in range(len(target_ranks)):
             
@@ -98,14 +109,19 @@ class ImageNetNodeCommunication:
                 #source_rank = status.Get_source()
                 #received_data = pickle.loads(buff)
                 self.recvd_samples.append(recv_req)
-            
-        self.comm.Barrier()
-        
+
+        print("Node comm all sending complete")
+        sys.stdout.flush()
+
+        #self.comm.Barrier()
+        hvd.allreduce(torch.tensor(0), name="barrier")
+
         if self.send_requests is not None and len(self.send_requests)>0:
             for req in self.send_requests:
                 req.wait()
         
-        self.comm.Barrier()
+        #self.comm.Barrier()
+        hvd.allreduce(torch.tensor(0), name="barrier")
 
     def sync_recv(self):
         if self.fraction == 0:
