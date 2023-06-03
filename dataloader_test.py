@@ -31,7 +31,7 @@ from imagenet_nodeComm import ImageNetNodeCommunication
 
 def get_accuracy(output, target):
     # get the index of the max log-probability
-    print("Output tensor#{0}, output shape#{1} \n target tensor#{2}, target shape#{3}".format(output, output.size(),target,target.size()))
+    ##print("Output tensor#{0}, output shape#{1} \n target tensor#{2}, target shape#{3}".format(output, output.size(),target,target.size()))
     pred = output.max(1, keepdim=True)[1]
     return pred.eq(target.view_as(pred)).cpu().float().mean()
 
@@ -77,11 +77,11 @@ def plot_timeBreakdown(epochs, plt_comp_time, plt_reading_time, plt_shuffling_ti
     plt.xlabel('Epochs')
     plt.xticks(range(epochs))
     plt.ylabel('Time (seconds)')
-    plt.title('Time breakdown per epoch')
+    plt.title('Training Time breakdown per epoch: PARTIAL')
     plt.legend(['Reading time', 'Shuffling time', 'Computation time', 'Total time'], loc='upper left')
 
     # Show the plot
-    plt.savefig('Imagenet_time_breakdown.png')
+    plt.savefig('Imagenet_training_timeBreakdown_PARTIAL.png')
 
 
 def plot_comp_timeBreakdown(epoch_no, plt_total_comp_output_time, plt_total_comp_loss_time,
@@ -103,16 +103,20 @@ def plot_comp_timeBreakdown(epoch_no, plt_total_comp_output_time, plt_total_comp
     plt.xlabel('Epochs')
     plt.xticks(range(epochs))
     plt.ylabel('Time (seconds)')
-    plt.title('Imagenet Computation Time breakdown per epoch')
+    plt.title('Imagenet Computation Time breakdown per epoch: PARTIAL')
     plt.legend(['Computation output time', 'Computation loss time', 'Computation backward time', 'Computation loss_div time', 'Total time'], loc='upper right')
 
 
     # Show the plot
-    plt.savefig('Imagenet_Computation_breakdown_basic.png')
+    plt.savefig('Imagenet_Computation_timeBreakdown_PARTIAL.png')
 
 
-def train(epoch, mini_batch_limit):
+def train(epoch, mini_batch_limit, nc):
 
+    loss_onIndex_onEpoch = dict()
+
+    nc._set_current_epoch(epoch) # IS
+    
     rank = hvd.rank()
     world_size = hvd.size()
 
@@ -147,10 +151,14 @@ def train(epoch, mini_batch_limit):
     total_comp_backward_time = 0
     total_comp_loss_div_time = 0
     
-    for batch_idx, (data, target, path) in enumerate(_train_loader):
+    for batch_idx, (data, target, path, index_list_tensor) in enumerate(_train_loader):
+
         if batch_idx < mini_batch_limit-1:
             # data reading time
             loading_end_time = time.time()
+
+            # index tensor to list
+            index_list = index_list_tensor.tolist()
 
             if _is_cuda:
                 data, target = data.cuda(), target.cuda()
@@ -160,8 +168,8 @@ def train(epoch, mini_batch_limit):
             time_allreduce = hvd.allreduce(torch.tensor(loading_end_time - loading_start_time), average=True)
             total_reading_time += time_allreduce.item()
 
-            if hvd.rank() == 0:
-                print("Average for all process Time to read mini-batch: {:.2f} seconds".format(time_allreduce.item()))
+            #if hvd.rank() == 0:
+                #print("Average for all process Time to read mini-batch: {:.2f} seconds".format(time_allreduce.item()))
 
             #set zero to optimizer
             optimizer.zero_grad()
@@ -198,6 +206,21 @@ def train(epoch, mini_batch_limit):
                     comp_loss_time_allreduce = hvd.allreduce(torch.tensor(computation_loss_end_time - computation_loss_start_time), average=True)
                     total_comp_loss_time += comp_loss_time_allreduce.item()
 
+                    loss_values = []  # List to store the loss values of each sample
+
+                    for i in range(len(output)):
+                        individual_output = output[i]
+                        individual_target = process_train_target[i]
+                        individual_loss = loss_fn(individual_output, individual_target)
+                        loss_values.append(individual_loss.item())
+
+                    # Obtain loss for each sample in the mini-batch by index
+                    for i, loss_value in enumerate(loss_values):
+                        sample_index = index_list[i]
+                        sample_loss = loss_values[i]  # Loss of the i-th sample in the mini-batch
+                        #print("index:{0}, loss:{1}".format(sample_index, sample_loss))
+                        loss_onIndex_onEpoch[sample_index] = sample_loss
+
                     computation_backward_start_time = time.time()
                     loss.backward()
                     computation_backward_end_time = time.time()
@@ -216,8 +239,8 @@ def train(epoch, mini_batch_limit):
 
         else:
             break
-        print(f"Epoch#{epoch}: Rank#{rank} accuracy#{acc} and loss#{loss.item()}")
-        print(f"Average Rank#{rank} accuracy#{acc_res.avg()} and loss#{loss_res.avg()}")
+        print(f"Epoch#{epoch}: Rank#{rank} accuracy#{acc} Percent and loss#{loss.item()}")
+        print(f"Average Rank#{rank} accuracy#{acc_res.avg()} Percent and loss#{loss_res.avg()}")
         sys.stdout.flush()
 
         # update model parameters
@@ -231,8 +254,10 @@ def train(epoch, mini_batch_limit):
         loading_start_time = time.time()
 
     if rank ==0:
-        print("Rank#{0}, Epoch#{1}, total average computation time: {2} seconds".format(rank, epoch, total_computation_time))
+    #    print("Rank#{0}, Epoch#{1}, total average computation time: {2} seconds".format(rank, epoch, total_computation_time))
         print("---- shuffling starts----")
+
+    nc._set_current_unsorted_batchLoss(loss_onIndex_onEpoch) #IS
 
     shuffling_start_time = time.time()
     nc.scheduling(epoch)
@@ -286,7 +311,7 @@ def validation(epoch):
     val_acc = 0.0
 
     with torch.no_grad():
-        for (val_data, val_target, path) in _val_loader:
+        for (val_data, val_target, path, index_tensor) in _val_loader:
             val_data, val_target = val_data.cuda(), val_target.cuda()
             val_output = model(val_data)
             val_acc = custom_accuracy(val_output, val_target)
@@ -297,8 +322,8 @@ def validation(epoch):
 
             if rank==0:
                 print("````````````````````````````````````````````````")
-                print(f"Epoch# {epoch}: Validatio acc#{val_acc} and val loss#{val_loss.item()}")
-                print(f"Average Validation Loss: {val_loss_met.avg()}, Validation Accuracy: {val_acc_met.avg()}")
+                print(f"Epoch# {epoch}: Validatio acc#{val_acc} Percent and val loss#{val_loss.item()}")
+                print(f"Average Validation Loss: {val_loss_met.avg()}, Validation Accuracy: {val_acc_met.avg()} percent")
                 print("`````````````````````````````````````````````````````````````````````")
                 sys.stdout.flush()
 
@@ -396,10 +421,10 @@ if __name__ == '__main__':
     fraction = 0.1
     seed = 41
     
-    nc = ImageNetNodeCommunication(train_dataset, batch_size, fraction, seed, min_train_dataset_len)
-
-    epoch_no = 30
+    epoch_no = 10
     total_duration = 0
+
+    nc = ImageNetNodeCommunication(train_dataset, batch_size, fraction, seed, min_train_dataset_len, epoch_no)
 
     plt_train_acc = list()
     plt_train_loss = list()
@@ -417,12 +442,12 @@ if __name__ == '__main__':
     plt_total_comp_backward_time = list()
     plt_total_comp_loss_div_time = list()
 
-
+    sample_losses = dict()
     for epoch in range(epoch_no):
         print("------------------- Epoch {0}--------------------\n".format(epoch))
         start_time = time.time()
 
-        train(epoch, mini_batch_limit)
+        train(epoch, mini_batch_limit, nc)
 
         end_time = time.time()
         duration = end_time - start_time
@@ -443,7 +468,7 @@ if __name__ == '__main__':
     # Draw plot
     if rank ==0:
         fig, ax = plt.subplots(3, 1, figsize=(8, 10))
-        fig.suptitle("Process Results")
+        fig.suptitle("ACC/LOSS")
 
         # Plot the training loss and accuracy
         ax[0].plot(np.arange(len(plt_train_loss)), plt_train_loss, label='Training Loss')
@@ -465,7 +490,7 @@ if __name__ == '__main__':
         ax[2].set_ylabel('Time')
         ax[2].legend()
 
-        plt.savefig('Imagenet_Partial_Shuffling.png')
+        plt.savefig('Imagenet_PARTIAL_lossAcc.png')
 
     if rank == 0:
         plot_timeBreakdown(epoch_no, plt_comp_time, plt_reading_time, plt_shuffling_time)

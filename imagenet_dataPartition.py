@@ -10,6 +10,10 @@ import zipfile
 from mpi4py import MPI
 import shutil
 
+#OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
+#PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
+#TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
+
 OUT_FOLDER = './imagenet_dataset/imagenet-mini'
 PARTITION_DIR = './imagenet_dataset/imagenet-mini'
 TARGET_DIR = './imagenet_dataset/imagenet-mini'
@@ -53,35 +57,55 @@ def main(args):
     # Get all directories in the directory
     wnids = [d for d in os.listdir(root_dir) if os.path.isdir(root_dir)]
     # Print the directory names
+
+    zip_files = list()
+
     for wnid in wnids:
         # Get all files in the directory
         wnid_dir = os.path.join(root_dir, wnid)
         files = [f for f in os.listdir(wnid_dir) if os.path.isfile(os.path.join(wnid_dir, f))]
 
-        for index, file in enumerate(files):
+        for index, file_path in enumerate(files):
             if index % size == rank:
-                file_path = os.path.join(wnid_dir, file)
+                file_path = os.path.join(wnid_dir, file_path)
                 partition_no = index % np
 
                 # add the file to proper partition zip file
                 # figure out the proper zip file name
-                zip_filename = os.path.join(OUT_FOLDER,"parition" + str(partition_no) + ".zip")
-                zip_directory = os.path.dirname(zip_filename)
+                zip_files.append((partition_no, file_path))
 
-                # Create the parent directory if it doesn't exist
-                if not os.path.exists(zip_directory):
-                    os.makedirs(zip_directory)
-
-                mode = 'a' if os.path.exists(os.path.dirname(zip_filename)) else 'w'
-                with zipfile.ZipFile(zip_filename, mode, zipfile.ZIP_DEFLATED) as zipf:
-                    arc_path = os.path.relpath(file_path, wnid_dir)
-                    arc_path = wnid+'/'+arc_path
-                    zipf.write(file_path, arcname=arc_path)
-                    print("{0} file adding to ZIP #{1}".format(file_path, zip_filename))
-                zipf.close()
-
-            comm.Barrier()
+        comm.Barrier()
     comm.Barrier()
+
+    partition_pair = dict() 
+    for each_pair in zip_files:
+        partition_no = each_pair[0]
+        sample_path = each_pair[1]
+        
+        if partition_no in partition_pair:
+            partition_pair[partition_no].append(sample_path)
+        else:
+            partition_pair[partition_no] = [sample_path]
+    
+    for partition_no, paths in partition_pair.items():
+        zip_filename = os.path.join(OUT_FOLDER,"parition" + str(partition_no) + ".zip")
+        zip_directory = os.path.dirname(zip_filename)
+
+        if not os.path.exists(zip_directory):
+            os.makedirs(zip_directory)
+
+        mode = 'a' if os.path.exists(os.path.dirname(zip_filename)) else 'w'
+        with zipfile.ZipFile(zip_filename, mode, zipfile.ZIP_DEFLATED) as zipf:
+            for file_path in paths:
+                wnid = os.path.basename(os.path.dirname(file_path))
+                wnid_dir = os.path.join(root_dir, wnid)
+                arc_path = os.path.relpath(file_path, wnid_dir)
+                arc_path = wnid+'/'+arc_path
+                zipf.write(file_path, arcname=arc_path)
+                print("{0} file adding to ZIP #{1}".format(file_path, zip_filename))
+        zipf.close()
+
+        print("Rank# {0} closed the partition# {1}.".format(rank, partition_no))
 
     #copy_partition(PARTITION_DIR, TARGET_DIR)
 

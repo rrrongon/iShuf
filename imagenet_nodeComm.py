@@ -6,9 +6,10 @@ import torch
 import sys
 import pickle
 import horovod.torch as hvd
+from imp_sampling_handler import ImpSam as IS
 
 class ImageNetNodeCommunication:
-    def __init__(self, dataset, local_batch_size = 0, fraction = 0, seed = 0, min_train_dataset_len=0):
+    def __init__(self, dataset, local_batch_size = 0, fraction = 0, seed = 0, min_train_dataset_len=0, epochs=0):
         self.dataset = dataset
         self.local_batch_size = local_batch_size
         self.fraction = fraction
@@ -27,6 +28,13 @@ class ImageNetNodeCommunication:
         self.recv_requests = list()
         self.sources = list()
         self.recvd_samples = list()
+        self.iSample = IS(epochs)
+
+    def _set_current_epoch(self, epoch):
+        self.iSample.set_current_spoch(epoch)
+
+    def _set_current_unsorted_batchLoss(self, unsorted_data):
+        self.iSample.set_current_unsorted_batchLoss(unsorted_data)
 
     def _set_send(self, send_request):
         self.send_request = send_request
@@ -67,10 +75,22 @@ class ImageNetNodeCommunication:
         #print("Rank#{0}, Target ranks len:{1}".format(self.rank, len(target_ranks)))
         #sys.stdout.flush()
         
+        # Get important sampling
+        top_percent = math.ceil(self.fraction * 100) + 3
+        important_samples = self.iSample.get_top_x_sample(top_percent) #important samples as a dict
+        
+        if self.rank==0:
+            print("Important Samples: in rank {0}: {1}\n".format(self.rank, important_samples))
+            sys.stdout.flush()
+
         sample_indexes = list()
-        for idx in range(0, min_shuffle_count):
-            sample_index = self.permutation[idx]
-            sample_indexes.append(sample_index)
+        #for idx in range(0, min_shuffle_count):
+        for sample_idx, loss in important_samples.items():
+            #sample_index = self.permutation[idx]
+            sample_indexes.append(sample_idx)
+            if self.rank==0:
+                print("Sending sample index: {0}".format(sample_idx))
+
         #self.comm.Barrier()
         hvd.allreduce(torch.tensor(0), name="barrier")
 
@@ -78,13 +98,14 @@ class ImageNetNodeCommunication:
         sample_batch = list()
         for idx in range(len(target_ranks)):
             data_pack = dict()
+           
             data_tup = self.dataset[sample_indexes[idx]]
             data_pack['sample'] = data_tup[0]
             data_pack['label'] = data_tup[1]
             data_pack['path'] = data_tup[2]
 
             sample_batch.append(data_pack)
-            
+       
         #self.comm.Barrier()
         hvd.allreduce(torch.tensor(0), name="barrier")
 
@@ -100,7 +121,7 @@ class ImageNetNodeCommunication:
                 req = self.comm.isend(send_data, dest= target_rank, tag=idx)
                 
                 self.send_requests.append(req)                
-                self.clean_list.append(self.permutation[idx])
+                self.clean_list.append(sample_indexes[idx])
 
                 status = MPI.Status()
                 buff = np.zeros(1 << 20, dtype=np.uint8)
