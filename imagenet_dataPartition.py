@@ -10,13 +10,18 @@ import zipfile
 from mpi4py import MPI
 import shutil
 
-#OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
-#PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
-#TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
+MINI = 1
+_21K = 2
+DATASET = _21K # /21K
 
-OUT_FOLDER = './imagenet_dataset/imagenet-mini'
-PARTITION_DIR = './imagenet_dataset/imagenet-mini'
-TARGET_DIR = './imagenet_dataset/imagenet-mini'
+if DATASET == _21K:
+    OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
+    PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
+    TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
+elif DATASET == MINI:
+    OUT_FOLDER = './imagenet_dataset/imagenet-mini'
+    PARTITION_DIR = './imagenet_dataset/imagenet-mini'
+    TARGET_DIR = './imagenet_dataset/imagenet-mini'
 
 argumentparser = argparse.ArgumentParser()
 argumentparser.add_argument('-npp','--npp', help='<Required> Number of Nodes to partition data among', required=True)
@@ -78,15 +83,30 @@ def main(args):
     comm.Barrier()
 
     partition_pair = dict() 
+    counter = 0
     for each_pair in zip_files:
-        partition_no = each_pair[0]
-        sample_path = each_pair[1]
+
+        if DATASET == _21K:
+            if counter % 2 ==0:
+                partition_no = each_pair[0]
+                sample_path = each_pair[1]
         
-        if partition_no in partition_pair:
-            partition_pair[partition_no].append(sample_path)
-        else:
-            partition_pair[partition_no] = [sample_path]
-    
+                if partition_no in partition_pair:
+                    partition_pair[partition_no].append(sample_path)
+                else:
+                    partition_pair[partition_no] = [sample_path]
+            counter += 1
+
+        elif DATASET == MINI:
+            partition_no = each_pair[0]
+            sample_path = each_pair[1]
+
+            if partition_no in partition_pair:
+                partition_pair[partition_no].append(sample_path)
+            else:
+                partition_pair[partition_no] = [sample_path]
+
+
     for partition_no, paths in partition_pair.items():
         zip_filename = os.path.join(OUT_FOLDER,"parition" + str(partition_no) + ".zip")
         zip_directory = os.path.dirname(zip_filename)

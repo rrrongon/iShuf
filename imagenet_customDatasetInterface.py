@@ -28,7 +28,7 @@ def rank_replace_img_path(rank, old_path):
     return new_path
 
 class ImageNetDataset(Dataset):
-    def __init__(self, data_folder, wnids_file, words_file, transform=None):
+    def __init__(self, data_folder, wnids_file, words_file, DATASET_TYPE, transform=None):
         self.data_folder = data_folder
         self.transform = transform
         self.wnid_label_dic = dict()
@@ -42,7 +42,7 @@ class ImageNetDataset(Dataset):
             transforms.Normalize(mean=[0.485, 0.456, 0.406],  # Normalize the image channels
                                 std=[0.229, 0.224, 0.225])
         ])
-        self.num_classes = 1000
+        self.num_classes = DATASET_TYPE
 
 
     def __len__(self):

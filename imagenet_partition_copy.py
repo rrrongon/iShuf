@@ -10,9 +10,18 @@ import zipfile
 from mpi4py import MPI
 import shutil
 
-OUT_FOLDER = './imagenet_dataset/imagenet-mini'
-PARTITION_DIR = './imagenet_dataset/imagenet-mini'
-TARGET_DIR = './imagenet_dataset/imagenet-mini'
+MINI = 1
+_21K = 2
+DATASET = MINI # /21K
+
+if DATASET == _21K:
+    OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
+    PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
+    TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
+elif DATASET == MINI:
+    OUT_FOLDER = './imagenet_dataset/imagenet-mini'
+    PARTITION_DIR = './imagenet_dataset/imagenet-mini'
+    TARGET_DIR = './imagenet_dataset/imagenet-mini'
 
 argumentparser = argparse.ArgumentParser()
 

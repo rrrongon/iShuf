@@ -29,6 +29,21 @@ import torch.nn as nn
 from imagenet_customDatasetInterface import ImageNetDataset
 from imagenet_nodeComm import ImageNetNodeCommunication
 
+MINI = 1
+_21K = 2
+DATASET = MINI # /21K
+
+if DATASET == _21K:
+    OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
+    PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
+    TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
+    CLASS_NUMBER = 21844
+elif DATASET == MINI:
+    OUT_FOLDER = './imagenet_dataset/imagenet-mini'
+    PARTITION_DIR = './imagenet_dataset/imagenet-mini'
+    TARGET_DIR = './imagenet_dataset/imagenet-mini'
+    CLASS_NUMBER = 1000
+
 def get_accuracy(output, target):
     # get the index of the max log-probability
     ##print("Output tensor#{0}, output shape#{1} \n target tensor#{2}, target shape#{3}".format(output, output.size(),target,target.size()))
@@ -346,16 +361,18 @@ if __name__ == '__main__':
     configs =json.load(f)
     torch.manual_seed(configs["MODEL"]["seed"])
 
-    IMGNET_DIR = configs["ROOT_DATADIR"]["imgnet_dir"]
-
+    if DATASET == MINI:
+        IMGNET_DIR = configs["ROOT_DATADIR"]["imgnet_dir"]
+    elif DATASET == _21K:
+        IMGNET_DIR = configs["ROOT_DATADIR"]["imgnet_21k_dir"]
     
     train_folder = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/train")
     wnids_file = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/wnids.txt")
     words_file = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/words.txt")
 
-    train_dataset = ImageNetDataset(train_folder, wnids_file, words_file, transform=None)
-    train_dataset_len = len(train_dataset)
+    train_dataset = ImageNetDataset(train_folder, wnids_file, words_file, CLASS_NUMBER, transform=None)
 
+    train_dataset_len = len(train_dataset)
     # Keep the minimum training dataset length for being in sync
     train_dataset_len = torch.tensor(train_dataset_len)
     min_train_dataset_len = hvd.allreduce(train_dataset_len, op=hvd.mpi_ops.Min)
@@ -375,7 +392,7 @@ if __name__ == '__main__':
             sampler= _train_sampler)
 
     _val_folder = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/val")
-    _val_dataset = ImageNetDataset(_val_folder, wnids_file, words_file, transform=None) 
+    _val_dataset = ImageNetDataset(_val_folder, wnids_file, words_file, CLASS_NUMBER, transform=None) 
 
     #custom_sampler = CustomSampler(_val_dataset)
     _val_sampler = dsampler(
@@ -390,11 +407,11 @@ if __name__ == '__main__':
     use_adasum = 0
     MPI.COMM_WORLD.Barrier()
     model = models.resnet50(pretrained=True)
-    num_classes = 1000
+    num_classes = CLASS_NUMBER
     num_ftrs = model.fc.in_features
     model.fc = nn.Linear(num_ftrs, num_classes)
 
-    base_lr = 0.1
+    base_lr = 0.0125
     momentum = 0.9
     scaled_lr = base_lr * hvd.size()
     if _is_cuda:
@@ -421,7 +438,7 @@ if __name__ == '__main__':
     fraction = 0.1
     seed = 41
     
-    epoch_no = 10
+    epoch_no = 100
     total_duration = 0
 
     nc = ImageNetNodeCommunication(train_dataset, batch_size, fraction, seed, min_train_dataset_len, epoch_no)
