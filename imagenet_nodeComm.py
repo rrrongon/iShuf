@@ -1,7 +1,7 @@
 from mpi4py import MPI
 import random
 import numpy as np
-import math 
+import math
 import torch
 import sys
 import pickle
@@ -38,7 +38,7 @@ class ImageNetNodeCommunication:
 
     def _set_send(self, send_request):
         self.send_request = send_request
-    
+
     def _set_recv(self, recv_request):
         self.recv_request = recv_request
 
@@ -48,10 +48,10 @@ class ImageNetNodeCommunication:
 
         shuffle_count = math.floor(len(self.dataset) * self.fraction)
         shuffle_count = torch.tensor(shuffle_count)
-    
+
         min_shuffle_count = hvd.allreduce(shuffle_count, op=hvd.mpi_ops.Min)
         min_shuffle_count = min_shuffle_count.item()
-        
+
         print("Node comm min finding complete. Min shuffle count#{0}".format(min_shuffle_count))
         sys.stdout.flush()
 
@@ -68,28 +68,28 @@ class ImageNetNodeCommunication:
             self.cp_rng.shuffle(self.comm_targets)
             target_rank = self.comm_targets[self.rank]
             target_ranks.append(target_rank)
-        
+
         #self.comm.Barrier()
         hvd.allreduce(torch.tensor(0), name="barrier")
 
         #print("Rank#{0}, Target ranks len:{1}".format(self.rank, len(target_ranks)))
         #sys.stdout.flush()
-        
+
         # Get important sampling
         top_percent = math.ceil(self.fraction * 100) + 3
         important_samples = self.iSample.get_top_x_sample(top_percent) #important samples as a dict
-        
-        if self.rank==0:
-            print("Important Samples: in rank {0}: {1}\n".format(self.rank, important_samples))
-            sys.stdout.flush()
+
+        #if self.rank==0:
+        #    print("Important Samples: in rank {0}: {1}\n".format(self.rank, important_samples))
+        #    sys.stdout.flush()
 
         sample_indexes = list()
         #for idx in range(0, min_shuffle_count):
         for sample_idx, loss in important_samples.items():
             #sample_index = self.permutation[idx]
             sample_indexes.append(sample_idx)
-            if self.rank==0:
-                print("Sending sample index: {0}".format(sample_idx))
+            #if self.rank==0:
+            #    print("Sending sample index: {0}".format(sample_idx))
 
         #self.comm.Barrier()
         hvd.allreduce(torch.tensor(0), name="barrier")
@@ -98,29 +98,29 @@ class ImageNetNodeCommunication:
         sample_batch = list()
         for idx in range(len(target_ranks)):
             data_pack = dict()
-           
+
             data_tup = self.dataset[sample_indexes[idx]]
             data_pack['sample'] = data_tup[0]
             data_pack['label'] = data_tup[1]
             data_pack['path'] = data_tup[2]
 
             sample_batch.append(data_pack)
-       
+
         #self.comm.Barrier()
         hvd.allreduce(torch.tensor(0), name="barrier")
 
         for idx in range(len(target_ranks)):
-            
+
             target_rank = target_ranks[idx]
             if self.rank != target_rank:
                 #print("Rank#{0}, sending Rank:{1}".format(self.rank, target_rank))
                 #sys.stdout.flush()
                 data_pack = sample_batch[idx]
-                
+
                 send_data = {'idx': idx, 'sample': data_pack['sample'], 'label': data_pack['label'], 'path': data_pack['path']}
                 req = self.comm.isend(send_data, dest= target_rank, tag=idx)
-                
-                self.send_requests.append(req)                
+
+                self.send_requests.append(req)
                 self.clean_list.append(sample_indexes[idx])
 
                 status = MPI.Status()
@@ -140,7 +140,7 @@ class ImageNetNodeCommunication:
         if self.send_requests is not None and len(self.send_requests)>0:
             for req in self.send_requests:
                 req.wait()
-        
+
         #self.comm.Barrier()
         hvd.allreduce(torch.tensor(0), name="barrier")
 
@@ -171,7 +171,7 @@ class ImageNetNodeCommunication:
 
         random.seed(self.seed + epoch)
         random.shuffle(self.permutation)
-    
+
     def sync_send(self):
         if self.send_requests is not None and len(self.send_requests) > 0:
             count=0
