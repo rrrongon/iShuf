@@ -186,3 +186,7 @@ class ImageNetNodeCommunication:
 
     def get_dataset(self):
         return self.dataset
+
+    def dump_result(self, rank):
+        file_name = 'loss_values_'+str(rank)+'.json'
+        self.iSample.save_loss_values_excel(file_name)

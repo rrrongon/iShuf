@@ -462,10 +462,10 @@ if __name__ == '__main__':
     hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
     batch_size = configs["MODEL"]["batch_size"]
-    fraction = 0.2
-    seed = 41
+    fraction = 0.1
+    seed = 42
 
-    epoch_no = 100
+    epoch_no = 50
     total_duration = 0
 
     nc = ImageNetNodeCommunication(train_dataset, batch_size, fraction, seed, min_train_dataset_len, epoch_no)
@@ -509,6 +509,7 @@ if __name__ == '__main__':
             #print("Average iteration duration: {0:.2f} seconds".format(avg_duration))
         sys.stdout.flush()
 
+    nc.dump_result(rank)
     # Draw plot
     if rank ==0:
         fig, ax = plt.subplots(3, 1, figsize=(8, 10))
