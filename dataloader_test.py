@@ -433,10 +433,18 @@ if __name__ == '__main__':
     wd = 0.0001
     use_adasum = 0
     MPI.COMM_WORLD.Barrier()
+    '''
     model = models.resnet50(pretrained=True)
+
     num_classes = CLASS_NUMBER
     num_ftrs = model.fc.in_features
     model.fc = nn.Linear(num_ftrs, num_classes)
+    '''
+    model = models.alexnet(pretrained=True)
+
+    num_classes = CLASS_NUMBER
+    num_ftrs = model.classifier[6].in_features  # Access the last fully connected layer of AlexNet
+    model.classifier[6] = nn.Linear(num_ftrs, num_classes)
 
     base_lr = 0.00125
     momentum = 0.9
@@ -463,9 +471,9 @@ if __name__ == '__main__':
 
     batch_size = configs["MODEL"]["batch_size"]
     fraction = 0.1
-    seed = 42
+    seed = 41
 
-    epoch_no = 50
+    epoch_no = 40
     total_duration = 0
 
     nc = ImageNetNodeCommunication(train_dataset, batch_size, fraction, seed, min_train_dataset_len, epoch_no)
