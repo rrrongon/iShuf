@@ -43,13 +43,19 @@ class ImageNetDataset(Dataset):
                                 std=[0.229, 0.224, 0.225])
         ])
         self.num_classes = DATASET_TYPE
+        self.indices = list(range(len(self.image_paths)))
+        self.shuffle_data()
+
+    def shuffle_data(self):
+        random.shuffle(self.indices)
 
 
     def __len__(self):
         return len(self.image_paths)
 
     def __getitem__(self, index):
-        image_path = self.image_paths[index]
+        shuffled_index = self.indices[index]
+        image_path = self.image_paths[shuffled_index]
         label = self.labels[index]
         #image = Image.open(image_path).convert('RGB')
 
@@ -88,7 +94,7 @@ class ImageNetDataset(Dataset):
                 print(f"issue on class folder{class_folder} and exception {e}")
             self.wnid_label_dic[class_label] = wnid
         return image_paths, labels
-    
+
     def add_new_samples(self, rank, recvd_samples):
         try:
             for sample in recvd_samples:
@@ -101,7 +107,7 @@ class ImageNetDataset(Dataset):
                 #if rank ==0:
                 #    print("received sample path: {0}.\n Replaced path:{1}".format(path, replaced_path))
                 #    sys.stdout.flush()
-                
+
                 self.image_paths.append(replaced_path)
                 self.labels.append(label)
         except Exception as e:
@@ -139,7 +145,7 @@ class ImageNetDataset(Dataset):
 
     def get_imagepaths(self):
         return self.image_paths
-    
+
     def get_labels(self):
         return self.labels
 '''

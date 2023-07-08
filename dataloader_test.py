@@ -126,11 +126,13 @@ def plot_comp_timeBreakdown(epoch_no, plt_total_comp_output_time, plt_total_comp
     plt.savefig('Imagenet_Computation_timeBreakdown_PARTIAL.png')
 
 
-def train(epoch, mini_batch_limit, nc):
+def train(epoch, mini_batch_limit, nc, _train_sampler):
 
     loss_onIndex_onEpoch = dict()
 
     nc._set_current_epoch(epoch) # IS
+
+    _train_sampler.set_epoch(epoch)
 
     rank = hvd.rank()
     world_size = hvd.size()
@@ -499,7 +501,7 @@ if __name__ == '__main__':
         print("------------------- Epoch {0}--------------------\n".format(epoch))
         start_time = time.time()
 
-        train(epoch, mini_batch_limit, nc)
+        train(epoch, mini_batch_limit, nc, _train_sampler)
 
         end_time = time.time()
         duration = end_time - start_time
