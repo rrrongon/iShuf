@@ -413,9 +413,11 @@ if __name__ == '__main__':
     mini_batch_limit = (min_train_dataset_len / _batch_size)
     print("Rank#{0}: minimum batch number limit#{1}".format(rank,mini_batch_limit))
 
+    seed = 41
+
     #custom_sampler = CustomSampler(_train_dataset)
     _train_sampler = dsampler(
-            train_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle=True)
+            train_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle=True, seed = seed)
     _train_loader = torch.utils.data.DataLoader(
             train_dataset, batch_size=_batch_size,
             sampler= _train_sampler)
@@ -425,7 +427,7 @@ if __name__ == '__main__':
 
     #custom_sampler = CustomSampler(_val_dataset)
     _val_sampler = dsampler(
-            _val_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle = True)
+            _val_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle = True, seed =seed)
     _val_loader = torch.utils.data.DataLoader(
             _val_dataset, batch_size= _batch_size,
             sampler= _val_sampler)
