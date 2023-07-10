@@ -43,19 +43,13 @@ class ImageNetDataset(Dataset):
                                 std=[0.229, 0.224, 0.225])
         ])
         self.num_classes = DATASET_TYPE
-        self.indices = list(range(len(self.image_paths)))
-        self.shuffle_data()
-
-    def shuffle_data(self):
-        random.shuffle(self.indices)
 
 
     def __len__(self):
         return len(self.image_paths)
 
     def __getitem__(self, index):
-        shuffled_index = self.indices[index]
-        image_path = self.image_paths[shuffled_index]
+        image_path = self.image_paths[index]
         label = self.labels[index]
         #image = Image.open(image_path).convert('RGB')
 

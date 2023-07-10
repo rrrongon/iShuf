@@ -228,6 +228,8 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
 
                     loss_values = []  # List to store the loss values of each sample
 
+                    i_list = list()
+
                     for i in range(len(output)):
                         individual_output = output[i]
                         individual_target = process_train_target[i]
@@ -240,6 +242,10 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
                         sample_loss = loss_values[i]  # Loss of the i-th sample in the mini-batch
                         #print("index:{0}, loss:{1}".format(sample_index, sample_loss))
                         loss_onIndex_onEpoch[sample_index] = sample_loss
+                        i_list.append(sample_index)
+
+                    #if rank == 0:
+                    #    print("minibatch index list: {0}".format(i_list))
 
                     computation_backward_start_time = time.time()
                     loss.backward()
@@ -434,7 +440,7 @@ if __name__ == '__main__':
 
     print("training directory of rank {0} is {1}. training set len {2} and val set len{3}".format(rank, train_folder , len(train_dataset), len(_val_dataset)))
 
-    wd = 0.0001
+    wd = 0.01
     use_adasum = 0
     MPI.COMM_WORLD.Barrier()
     '''
@@ -450,7 +456,7 @@ if __name__ == '__main__':
     num_ftrs = model.classifier[6].in_features  # Access the last fully connected layer of AlexNet
     model.classifier[6] = nn.Linear(num_ftrs, num_classes)
 
-    base_lr = 0.00125
+    base_lr = 0.0000125
     momentum = 0.9
     scaled_lr = base_lr * hvd.size()
     if _is_cuda:
@@ -475,9 +481,9 @@ if __name__ == '__main__':
 
     batch_size = configs["MODEL"]["batch_size"]
     fraction = 0.1
-    seed = 41
+    seed = 42
 
-    epoch_no = 40
+    epoch_no = 300
     total_duration = 0
 
     nc = ImageNetNodeCommunication(train_dataset, batch_size, fraction, seed, min_train_dataset_len, epoch_no)
