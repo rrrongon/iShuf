@@ -100,10 +100,11 @@ def plot_timeBreakdown(epochs, plt_comp_time, plt_reading_time, plt_shuffling_ti
 
 
 def plot_comp_timeBreakdown(epoch_no, plt_total_comp_output_time, plt_total_comp_loss_time,
-                            plt_total_comp_backward_time, plt_total_comp_loss_div_time):
+                            plt_total_comp_backward_time, plt_total_comp_loss_div_time, plt_total_isampleComputation_time):
 
     epochs = len(plt_total_comp_output_time)
-    plt_total_time = np.add(np.add(np.add(plt_total_comp_output_time, plt_total_comp_loss_time), plt_total_comp_backward_time), plt_total_comp_loss_div_time)
+    plt_total_time = np.add(np.add(np.add(np.add(plt_total_comp_output_time, plt_total_comp_loss_time), plt_total_comp_backward_time), plt_total_comp_loss_div_time), plt_total_isampleComputation_time)
+
     barWidth = 0.85
 
     # Create the stacked bar chart
@@ -112,15 +113,16 @@ def plot_comp_timeBreakdown(epoch_no, plt_total_comp_output_time, plt_total_comp
     plt.bar(range(epochs), plt_total_comp_loss_time, bottom=plt_total_comp_output_time, color='#FAA43A', edgecolor='white', width=barWidth)
     plt.bar(range(epochs), plt_total_comp_backward_time, bottom=np.add(plt_total_comp_output_time, plt_total_comp_loss_time), color='#60BD68', edgecolor='white', width=barWidth)
     plt.bar(range(epochs), plt_total_comp_loss_div_time, bottom=np.add(np.add(plt_total_comp_output_time, plt_total_comp_loss_time), plt_total_comp_backward_time), color='#F17CB0', edgecolor='white', width=barWidth)
+    plt.bar(range(epochs), plt_total_isampleComputation_time, bottom=np.add(np.add(np.add(plt_total_comp_output_time, plt_total_comp_loss_time), plt_total_comp_backward_time), plt_total_comp_loss_div_time), color='#D7D7D7', edgecolor='white', width=barWidth)  # New bar for plt_total_isampleComputation_time
     plt.bar(range(epochs), plt_total_time, color='grey', alpha=0.2, edgecolor='white', width=barWidth)
 
     # Add labels and legend
     plt.xlabel('Epochs')
     plt.xticks(range(epochs))
     plt.ylabel('Time (seconds)')
-    plt.title('Imagenet Computation Time breakdown per epoch: PARTIAL')
-    plt.legend(['Computation output time', 'Computation loss time', 'Computation backward time', 'Computation loss_div time', 'Total time'], loc='upper right')
+    plt.title('Imagenet Computation Time breakdown per epoch: Isample Partial')
 
+    plt.legend(['Computation output time', 'Computation loss time', 'Computation backward time', 'Computation loss_div time', 'iSample Computation time', 'Total time'], loc='upper right')
 
     # Show the plot
     plt.savefig('Imagenet_Computation_timeBreakdown_PARTIAL.png')
@@ -130,9 +132,12 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
 
     loss_onIndex_onEpoch = dict()
 
-    nc._set_current_epoch(epoch) # IS
+    '''
+    @ Just set the current epoch to important Sample handler for calculation
+    '''
+    nc._set_current_epoch(epoch) # this is for important sampling
 
-    _train_sampler.set_epoch(epoch)
+    _train_sampler.set_epoch(epoch) # For each epoch generate shuffled dataset indices
 
     rank = hvd.rank()
     world_size = hvd.size()
@@ -150,15 +155,6 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
     else:
         device = torch.device("cpu")
 
-
-    #Inter process communication initialization
-    nc.scheduling(epoch)
-
-    data_loading_times = list()
-    data_loading_start_time = time.time()
-
-    # Synchronize start time across all processes
-    loading_start_time = time.time()
     #loading_start_time_acp = hvd.broadcast(torch.tensor(loading_start_time), root_rank=0, name='start_time').item()
     total_computation_time = 0
     total_reading_time = 0
@@ -167,9 +163,17 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
     total_comp_loss_time = 0
     total_comp_backward_time = 0
     total_comp_loss_div_time = 0
+    isample_comp_time = 0
 
     total_correct=0
     total_sample = 0
+
+    data_loading_times = list()
+    data_loading_start_time = time.time()
+
+    # Synchronize start time across all processes
+    loading_start_time = time.time()
+    loading_end_time = 0
 
     for batch_idx, (data, target, path, index_list_tensor) in enumerate(_train_loader):
 
@@ -177,19 +181,8 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
             # data reading time
             loading_end_time = time.time()
 
-            # index tensor to list
-            index_list = index_list_tensor.tolist()
-
             if _is_cuda:
                 data, target = data.cuda(), target.cuda()
-
-            #print("Rank#{0}, Epoch#{1}, Mini-batch#{2} Time to read mini-batch: {3} seconds".format(rank, epoch, batch_idx, (loading_end_time - loading_start_time)))
-
-            time_allreduce = hvd.allreduce(torch.tensor(loading_end_time - loading_start_time), average=True)
-            total_reading_time += time_allreduce.item()
-
-            #if hvd.rank() == 0:
-                #print("Average for all process Time to read mini-batch: {:.2f} seconds".format(time_allreduce.item()))
 
             #set zero to optimizer
             optimizer.zero_grad()
@@ -197,6 +190,9 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
             #Prepare data for each process by spliting
             train_data_splits = torch.split(data, _batch_size) #create split chunk of size batch size. Then by rank each rank can process a part of chunk of batch_size
             train_target_splits = torch.split(target, _batch_size)
+
+            # index tensor to list
+            index_list = index_list_tensor.tolist()
 
             if len(train_data_splits) > 0:
                 cnt = 0
@@ -212,24 +208,41 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
                     #check length of data and target are same
                     assert len(process_train_data) == len(process_train_target) , "Error in splitting of data and target "
 
-                    computation_start_time = time.time()
+                    '''
+                    Measure average output calculation time among processes
+                    '''
                     computation_output_start_time = time.time()
-                    output = model(process_train_data)
-                    computation_output_end_time = time.time()
 
+                    output = model(process_train_data)
+
+                    computation_output_end_time = time.time()
                     comp_output_time_allreduce = hvd.allreduce(torch.tensor(computation_output_end_time - computation_output_start_time), average=True)
                     total_comp_output_time += comp_output_time_allreduce.item()
 
+
+                    '''
+                    Measure loss computation time
+                    '''
                     computation_loss_start_time = time.time()
                     loss = loss_fn(output, process_train_target)
                     computation_loss_end_time = time.time()
+
                     comp_loss_time_allreduce = hvd.allreduce(torch.tensor(computation_loss_end_time - computation_loss_start_time), average=True)
                     total_comp_loss_time += comp_loss_time_allreduce.item()
 
-                    loss_values = []  # List to store the loss values of each sample
+                    '''
+                    Measure backward computation time
+                    '''
+                    computation_backward_start_time = time.time()
+                    loss.backward()
+                    computation_backward_end_time = time.time()
+                    comp_backward_allreduce = hvd.allreduce(torch.tensor(computation_backward_end_time - computation_backward_start_time), average=True)
+                    total_comp_backward_time += comp_backward_allreduce.item()
 
+                    loss_values = []  # List to store the loss values of each sample
                     i_list = list()
 
+                    isample_computation_start_time = time.time()
                     for i in range(len(output)):
                         individual_output = output[i]
                         individual_target = process_train_target[i]
@@ -243,20 +256,9 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
                         #print("index:{0}, loss:{1}".format(sample_index, sample_loss))
                         loss_onIndex_onEpoch[sample_index] = sample_loss
                         i_list.append(sample_index)
-
-                    #if rank == 0:
-                    #    print("minibatch index list: {0}".format(i_list))
-
-                    computation_backward_start_time = time.time()
-                    loss.backward()
-                    computation_backward_end_time = time.time()
-                    comp_backward_allreduce = hvd.allreduce(torch.tensor(computation_backward_end_time - computation_backward_start_time), average=True)
-                    total_comp_backward_time += comp_backward_allreduce.item()
-
-                    computation_end_time = time.time()
-
-                    computation_time_allreduce = hvd.allreduce(torch.tensor(computation_end_time - computation_start_time), average=True)
-                    total_computation_time += computation_time_allreduce.item()
+                    isample_computation_end_time = time.time()
+                    isample_comp_allreduce = hvd.allreduce(torch.tensor(isample_computation_end_time - isample_computation_start_time), average=True)
+                    isample_comp_time += isample_comp_allreduce.item()
 
                     correct, mini_batch_total = custom_accuracy(output, process_train_target)
                     total_correct += correct
@@ -273,8 +275,11 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
         optimizer.step()
         torch.cuda.synchronize()
 
-        #plt_train_acc.append(acc)
-        #plt_train_loss.append(loss.item())
+        '''
+        @Calculate reading time for current mini-batchs and keep adding to calculate total reading time for an epoch
+        '''
+        time_allreduce = hvd.allreduce(torch.tensor(loading_end_time - loading_start_time), average=True)
+        total_reading_time += time_allreduce.item()
 
         loading_start_time = time.time()
 
@@ -282,9 +287,9 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
     #    print("Rank#{0}, Epoch#{1}, total average computation time: {2} seconds".format(rank, epoch, total_computation_time))
         print("---- shuffling starts----")
 
-    nc._set_current_unsorted_batchLoss(loss_onIndex_onEpoch) #IS
 
     shuffling_start_time = time.time()
+    nc._set_current_unsorted_batchLoss(loss_onIndex_onEpoch) #IS
     nc.scheduling(epoch)
     nc._communicate()
     print("Rank#{0} is done in Communicating".format(rank))
@@ -313,6 +318,13 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
     shuffling_end_time = time.time()
     shuffling_time_allreduce = hvd.allreduce(torch.tensor(shuffling_end_time - shuffling_start_time), average=True)
 
+    '''
+    @Measure total computation time by adding segmented sum of times
+    Measure total training time by adding computation time, reading time, shuffling time
+    '''
+    computation_time = total_comp_output_time + total_comp_loss_time + total_comp_backward_time + isample_comp_time
+    training_time = total_reading_time + computation_time + shuffling_time_allreduce.item()
+
     #correct = custom_accuracy(output, process_train_target)
     acc = (total_correct/total_sample) * 100
     acc_res.update(acc)
@@ -330,7 +342,7 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
 
         print("Rank#{0}, Epoch#{1}, Shuffling time: {2} seconds".format(rank, epoch, (shuffling_time_allreduce.item())))
         plt_shuffling_time.append(shuffling_time_allreduce.item())
-        plt_comp_time.append(total_computation_time)
+        plt_comp_time.append(computation_time)
         plt_reading_time.append(total_reading_time)
         #loading_start_time_acp = hvd.broadcast(torch.tensor(loading_start_time), root_rank=0, name='start_time').item()
 
@@ -338,6 +350,12 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
         plt_total_comp_loss_time.append(total_comp_loss_time)
         plt_total_comp_backward_time.append(total_comp_backward_time)
         plt_total_comp_loss_div_time.append(0)
+        plt_total_isampleComputation_time.append(isample_comp_time)
+
+        plt_total_training_time.append(training_time)
+        plt_total_computation_time.append(computation_time)
+        plt_train_time.append(training_time)
+
 
 def validation(epoch):
     #if epoch % 5 = 0:
@@ -382,6 +400,14 @@ def validation(epoch):
 
         model.train()
 
+def calculate_average(lst):
+    if len(lst) == 0:
+        return 0  # Handle the case when the list is empty
+
+    total = sum(lst)
+    average = total / len(lst)
+    return average
+
 
 if __name__ == '__main__':
 
@@ -419,11 +445,9 @@ if __name__ == '__main__':
     mini_batch_limit = (min_train_dataset_len / _batch_size)
     print("Rank#{0}: minimum batch number limit#{1}".format(rank,mini_batch_limit))
 
-    seed = 41
-
     #custom_sampler = CustomSampler(_train_dataset)
     _train_sampler = dsampler(
-            train_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle=True, seed = seed)
+            train_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle=True)
     _train_loader = torch.utils.data.DataLoader(
             train_dataset, batch_size=_batch_size,
             sampler= _train_sampler)
@@ -433,31 +457,33 @@ if __name__ == '__main__':
 
     #custom_sampler = CustomSampler(_val_dataset)
     _val_sampler = dsampler(
-            _val_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle = True, seed =seed)
+            _val_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle = True)
     _val_loader = torch.utils.data.DataLoader(
             _val_dataset, batch_size= _batch_size,
             sampler= _val_sampler)
 
     print("training directory of rank {0} is {1}. training set len {2} and val set len{3}".format(rank, train_folder , len(train_dataset), len(_val_dataset)))
 
-    wd = 0.01
+    wd = configs["MODEL"]["wd"]
     use_adasum = 0
     MPI.COMM_WORLD.Barrier()
-    '''
+
     model = models.resnet50(pretrained=True)
 
     num_classes = CLASS_NUMBER
     num_ftrs = model.fc.in_features
     model.fc = nn.Linear(num_ftrs, num_classes)
+
     '''
     model = models.alexnet(pretrained=True)
 
     num_classes = CLASS_NUMBER
     num_ftrs = model.classifier[6].in_features  # Access the last fully connected layer of AlexNet
     model.classifier[6] = nn.Linear(num_ftrs, num_classes)
+    '''
+    base_lr = configs["MODEL"]["base_lr"]
+    momentum = configs["MODEL"]["moment"]
 
-    base_lr = 0.0000125
-    momentum = 0.9
     scaled_lr = base_lr * hvd.size()
     if _is_cuda:
         # Move model to GPU.
@@ -480,10 +506,11 @@ if __name__ == '__main__':
     hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
     batch_size = configs["MODEL"]["batch_size"]
-    fraction = 0.1
-    seed = 42
+    fraction = configs["MODEL"]["fraction"]
+    seed = configs["MODEL"]["seed"]
 
-    epoch_no = 300
+    epoch_no = configs["MODEL"]["epoch"]
+
     total_duration = 0
 
     nc = ImageNetNodeCommunication(train_dataset, batch_size, fraction, seed, min_train_dataset_len, epoch_no)
@@ -503,29 +530,20 @@ if __name__ == '__main__':
     plt_total_comp_loss_time = list()
     plt_total_comp_backward_time = list()
     plt_total_comp_loss_div_time = list()
+    plt_total_isampleComputation_time = list()
+
+    plt_total_training_time = list()
+    plt_total_computation_time = list()
 
     sample_losses = dict()
     for epoch in range(epoch_no):
         print("------------------- Epoch {0}--------------------\n".format(epoch))
-        start_time = time.time()
 
         train(epoch, mini_batch_limit, nc, _train_sampler)
-
-        end_time = time.time()
-        duration = end_time - start_time
-        total_duration += duration
 
         hvd.barrier()
 
         validation(epoch)
-        if rank==0:
-            #print("Iteration {0} took {1:.2f} seconds".format(epoch, duration))
-            plt_train_time.append(duration)
-
-        avg_duration = total_duration / epoch_no
-        #if rank==0:
-            #print("Average iteration duration: {0:.2f} seconds".format(avg_duration))
-        sys.stdout.flush()
 
     nc.dump_result(rank)
     # Draw plot
@@ -559,4 +577,30 @@ if __name__ == '__main__':
         plot_timeBreakdown(epoch_no, plt_comp_time, plt_reading_time, plt_shuffling_time)
 
     if rank == 0:
-        plot_comp_timeBreakdown(epoch_no, plt_total_comp_output_time, plt_total_comp_loss_time, plt_total_comp_backward_time, plt_total_comp_loss_div_time)
+        plot_comp_timeBreakdown(epoch_no, plt_total_comp_output_time, plt_total_comp_loss_time, plt_total_comp_backward_time, plt_total_comp_loss_div_time, plt_total_isampleComputation_time)
+
+    if rank ==0:
+        '''
+        @Calculate average time for each segment
+        '''
+        avg_shuffling_time = calculate_average(plt_shuffling_time)
+        avg_reading_time = calculate_average(plt_reading_time)
+        #loading_start_time_acp = hvd.broadcast(torch.tensor(loading_start_time), root_rank=0, name='start_time').item()
+
+        avg_output_time = calculate_average(plt_total_comp_output_time)
+        avg_loss_time = calculate_average(plt_total_comp_loss_time)
+        avg_back_time = calculate_average(plt_total_comp_backward_time)
+        avg_training_time = calculate_average(plt_total_training_time)
+        avg_comp_time= calculate_average(plt_total_computation_time)
+        avg_isample_com_time = calculate_average(plt_total_isampleComputation_time)
+
+        print("----------------------\n")
+        print("Average training time: {0}\n".format(avg_training_time))
+        print("Average computation time: {0}\n".format(avg_comp_time))
+        print("Average reading time: {0}\n".format(avg_reading_time))
+        print("Average shuffling time: {0}\n".format(avg_shuffling_time))
+        print("Average output time: {0}\n".format(avg_output_time))
+        print("Average loss time: {0}\n".format(avg_loss_time))
+        print("Average backprop time: {0}\n".format(avg_back_time))
+        print("Average backprop time: {0}\n".format(avg_isample_com_time))
+
