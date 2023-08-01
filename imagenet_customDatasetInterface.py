@@ -61,7 +61,7 @@ class ImageNetDataset(Dataset):
         y_one_hot = torch.zeros(self.num_classes)
         y_one_hot[label] = 1
 
-        return image, y_one_hot, image_path, index
+        return image, y_one_hot, image_path, str(index)
 
     def read_classes(self, wnids_file, words_file):
         with open(wnids_file, 'r') as file:

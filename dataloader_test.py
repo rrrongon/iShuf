@@ -31,7 +31,7 @@ from imagenet_nodeComm import ImageNetNodeCommunication
 
 MINI = 1
 _21K = 2
-DATASET = MINI # /21K
+DATASET = _21K # /21K
 
 if DATASET == _21K:
     OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
@@ -175,8 +175,8 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
     loading_start_time = time.time()
     loading_end_time = 0
 
-    for batch_idx, (data, target, path, index_list_tensor) in enumerate(_train_loader):
-
+    #for batch_idx, (data, target, path, index_list_tensor) in enumerate(_train_loader):
+    for batch_idx, (data, target, path, index_str_list) in enumerate(_train_loader):
         if batch_idx < mini_batch_limit-1:
             # data reading time
             loading_end_time = time.time()
@@ -192,7 +192,7 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
             train_target_splits = torch.split(target, _batch_size)
 
             # index tensor to list
-            index_list = index_list_tensor.tolist()
+            #index_list = index_list_tensor.tolist()
 
             if len(train_data_splits) > 0:
                 cnt = 0
@@ -251,7 +251,9 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
 
                     # Obtain loss for each sample in the mini-batch by index
                     for i, loss_value in enumerate(loss_values):
-                        sample_index = index_list[i]
+                        #sample_index = index_list[i]
+                        sample_index = index_str_list[i]
+                        sample_index = int(sample_index)
                         sample_loss = loss_values[i]  # Loss of the i-th sample in the mini-batch
                         #print("index:{0}, loss:{1}".format(sample_index, sample_loss))
                         loss_onIndex_onEpoch[sample_index] = sample_loss

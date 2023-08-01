@@ -12,7 +12,7 @@ import shutil
 
 MINI = 1
 _21K = 2
-DATASET = MINI # /21K
+DATASET = _21K # /21K
 
 if DATASET == _21K:
     OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
@@ -35,7 +35,7 @@ IMG_EXTENSIONS = [
 
 def copy_partition(PARTITION_DIR, TARGET_DIR, rank, size, comm):
     pass
-        
+
 def is_image_file(filename):
     return any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
 
@@ -51,16 +51,16 @@ def main(args):
             _dir_path = os.path.join(TARGET_DIR, dir_name)
             dir_path = os.path.join(_dir_path, 'train')
             os.makedirs(dir_path, exist_ok=True)
-        
+
             # Copy the zip file to the directory
             zip_path = os.path.join(PARTITION_DIR, zip_file)
             dest_path = os.path.join(dir_path, zip_file)
             shutil.copy2(zip_path, dest_path)
-        
+
             # Extract the zip file
             with zipfile.ZipFile(dest_path, 'r') as zip_ref:
                 zip_ref.extractall(dir_path)
-            
+
             # Remove the zip file
             os.remove(dest_path)
 
@@ -74,10 +74,10 @@ def main(args):
 
             val_source = os.path.join(PARTITION_DIR, 'val')
             val_target = os.path.join(_dir_path, 'val')
-            
+
             shutil.copytree(val_source, val_target)
     comm.Barrier()
 
 if __name__ == '__main__':
-   main(argumentparser.parse_args())  
+   main(argumentparser.parse_args())
 
