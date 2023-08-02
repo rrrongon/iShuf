@@ -37,12 +37,12 @@ def copy_partition(PARTITION_DIR, TARGET_DIR):
         dir_name = os.path.splitext(zip_file)[0]
         dir_path = os.path.join(TARGET_DIR, dir_name)
         os.makedirs(dir_path, exist_ok=True)
-        
+
         # Copy the zip file to the directory
         zip_path = os.path.join(PARTITION_DIR, zip_file)
         dest_path = os.path.join(dir_path, zip_file)
         shutil.copy2(zip_path, dest_path)
-        
+
         # Extract the zip file
         with zipfile.ZipFile(dest_path, 'r') as zip_ref:
             zip_ref.extractall(dir_path)
@@ -82,7 +82,7 @@ def main(args):
         comm.Barrier()
     comm.Barrier()
 
-    partition_pair = dict() 
+    partition_pair = dict()
     counter = 0
     for each_pair in zip_files:
 
@@ -90,7 +90,7 @@ def main(args):
             if counter % 2 ==0:
                 partition_no = each_pair[0]
                 sample_path = each_pair[1]
-        
+
                 if partition_no in partition_pair:
                     partition_pair[partition_no].append(sample_path)
                 else:
@@ -130,5 +130,5 @@ def main(args):
     #copy_partition(PARTITION_DIR, TARGET_DIR)
 
 if __name__ == '__main__':
-   main(argumentparser.parse_args())  
+   main(argumentparser.parse_args())
 

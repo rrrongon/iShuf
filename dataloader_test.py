@@ -183,7 +183,7 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
 
             if _is_cuda:
                 data, target = data.cuda(), target.cuda()
-
+            print("Mini batch {0}".format(batch_idx))
             #set zero to optimizer
             optimizer.zero_grad()
 
@@ -454,7 +454,8 @@ if __name__ == '__main__':
             train_dataset, batch_size=_batch_size,
             sampler= _train_sampler)
 
-    _val_folder = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/val")
+    #_val_folder = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/val")
+    _val_folder = os.path.join(IMGNET_DIR, "val")
     _val_dataset = ImageNetDataset(_val_folder, wnids_file, words_file, CLASS_NUMBER, transform=None)
 
     #custom_sampler = CustomSampler(_val_dataset)

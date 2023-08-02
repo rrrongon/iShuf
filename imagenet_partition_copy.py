@@ -72,10 +72,10 @@ def main(args):
             dest_words_path = os.path.join(_dir_path, words_file)
             shutil.copy2(words_path, dest_words_path)
 
-            val_source = os.path.join(PARTITION_DIR, 'val')
-            val_target = os.path.join(_dir_path, 'val')
+            #val_source = os.path.join(PARTITION_DIR, 'val')
+            #val_target = os.path.join(_dir_path, 'val')
 
-            shutil.copytree(val_source, val_target)
+            #shutil.copytree(val_source, val_target)
     comm.Barrier()
 
 if __name__ == '__main__':
