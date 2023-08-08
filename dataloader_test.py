@@ -28,10 +28,11 @@ import torch.nn as nn
 #File Import
 from imagenet_customDatasetInterface import ImageNetDataset
 from imagenet_nodeComm import ImageNetNodeCommunication
+from imagenetValidation import ImageNetValidationDataset
 
 MINI = 1
 _21K = 2
-DATASET = _21K # /21K
+DATASET = MINI # /21K
 
 if DATASET == _21K:
     OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
@@ -372,7 +373,7 @@ def validation(epoch):
     total_correct = 0
     total_sample = 0
     with torch.no_grad():
-        for (val_data, val_target, path, index_tensor) in _val_loader:
+        for (val_data, val_target) in _val_loader:
             val_data, val_target = val_data.cuda(), val_target.cuda()
             val_output = model(val_data)
             val_loss = loss_fn(val_output, val_target)
@@ -432,8 +433,13 @@ if __name__ == '__main__':
     train_folder = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/train")
     wnids_file = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/wnids.txt")
     words_file = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/words.txt")
+    val_wnid_file = os.path.join(IMGNET_DIR,"ImageNet_val_label.txt")
+    class_label_file = os.path.join(IMGNET_DIR,"class-label.txt")
+    _val_folder = "./imagenet_dataset/imagenet21k_resized/val"
+    val_wnid_file = "./imagenet_dataset/imagenet21k_resized/ImageNet_val_label.txt"
 
-    train_dataset = ImageNetDataset(train_folder, wnids_file, words_file, CLASS_NUMBER, transform=None)
+
+    train_dataset = ImageNetDataset(train_folder, wnids_file, words_file,class_label_file, CLASS_NUMBER, transform=None)
 
     train_dataset_len = len(train_dataset)
     # Keep the minimum training dataset length for being in sync
@@ -455,9 +461,10 @@ if __name__ == '__main__':
             sampler= _train_sampler)
 
     #_val_folder = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/val")
-    _val_folder = os.path.join(IMGNET_DIR, "val")
-    _val_dataset = ImageNetDataset(_val_folder, wnids_file, words_file, CLASS_NUMBER, transform=None)
+    #_val_folder = os.path.join(IMGNET_DIR, "val")
 
+    #_val_dataset = ImageNetDataset(_val_folder, wnids_file, words_file, CLASS_NUMBER, transform=None)
+    _val_dataset = ImageNetValidationDataset(_val_folder, val_wnid_file, class_label_file, CLASS_NUMBER, transform=None)
     #custom_sampler = CustomSampler(_val_dataset)
     _val_sampler = dsampler(
             _val_dataset, num_replicas=hvd.size(), rank=hvd.rank(), shuffle = True)

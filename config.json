@@ -8,15 +8,15 @@
          "imgnet_21k_dir": "./imagenet_dataset/imagenet21k_resized"
      },
      "MODEL":{
-        "batch_size": 32,
-        "epochs": 200,
+        "batch_size": 16,
+        "epochs": 50,
         "base_lr": 0.000125,
         "seed": 42,
         "batches_per_allreduce":1,
         "wd": 0.001,
         "moment": 0.9,
-        "fraction":0.03,
-        "epoch": 200
+        "fraction":0.1,
+        "epoch": 50
 
     }
 

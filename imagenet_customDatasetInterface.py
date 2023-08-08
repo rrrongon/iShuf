@@ -27,11 +27,16 @@ def rank_replace_img_path(rank, old_path):
     #print("Old path#{0} and new path#{1}".format(old_path, new_path))
     return new_path
 
+def get_last_folder_name(file_path):
+    last_folder = os.path.basename(os.path.dirname(file_path))
+    return last_folder
+
 class ImageNetDataset(Dataset):
-    def __init__(self, data_folder, wnids_file, words_file, DATASET_TYPE, transform=None):
+    def __init__(self, data_folder, wnids_file, words_file,class_labels_file, DATASET_TYPE, transform=None):
         self.data_folder = data_folder
         self.transform = transform
         self.wnid_label_dic = dict()
+        self.class_labels_file = class_labels_file
         self.classes, self.class_labels = self.read_classes(wnids_file, words_file)
         self.image_paths, self.labels = self.collect_image_paths()
         self.transform = transforms.Compose([
@@ -43,6 +48,11 @@ class ImageNetDataset(Dataset):
                                 std=[0.229, 0.224, 0.225])
         ])
         self.num_classes = DATASET_TYPE
+        self.wnid_to_label = {}
+        with open(self.class_labels_file, 'r') as file:
+            for line in file:
+                wnid, label = line.strip().split()
+                self.wnid_to_label[wnid] = int(label)
 
 
     def __len__(self):
@@ -50,7 +60,9 @@ class ImageNetDataset(Dataset):
 
     def __getitem__(self, index):
         image_path = self.image_paths[index]
-        label = self.labels[index]
+        wnid = get_last_folder_name(image_path)
+        label = self.wnid_to_label[wnid]
+        #label = self.labels[index]
         #image = Image.open(image_path).convert('RGB')
 
         image = PIL.Image.open(image_path)
@@ -116,6 +128,9 @@ class ImageNetDataset(Dataset):
                 image = tensor_to_image(sample['sample'])
                 path = str(sample['path'])
                 replaced_path = rank_replace_img_path(rank, path)
+                folder_path = os.path.dirname(replaced_path)
+                if not os.path.exists(folder_path):
+                    os.makedirs(folder_path)
                 image.save(replaced_path)
                 #print("Rank#{0} Image saved path {1}\n".format(rank, path))
                 sys.stdout.flush()

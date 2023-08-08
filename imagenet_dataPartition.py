@@ -12,7 +12,7 @@ import shutil
 
 MINI = 1
 _21K = 2
-DATASET = _21K # /21K
+DATASET = MINI # /21K
 
 if DATASET == _21K:
     OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
@@ -78,6 +78,7 @@ def main(args):
                 # add the file to proper partition zip file
                 # figure out the proper zip file name
                 zip_files.append((partition_no, file_path))
+                #print("File path#{0} added to Partition no#{1} ".format(file_path, partition_no))
 
         comm.Barrier()
     comm.Barrier()
@@ -107,12 +108,26 @@ def main(args):
                 partition_pair[partition_no] = [sample_path]
 
 
+    if rank == 0:
+        for partition_no in range(np):
+            zip_filename = os.path.join(OUT_FOLDER,"parition" + str(partition_no) + ".zip")
+            zip_directory = os.path.dirname(zip_filename)
+
+            if not os.path.exists(zip_directory):
+                os.makedirs(zip_directory)
+
+            with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
+                print(f" {zip_filename} created")
+            zipf.close()
+
+    comm.Barrier()
+
     for partition_no, paths in partition_pair.items():
         zip_filename = os.path.join(OUT_FOLDER,"parition" + str(partition_no) + ".zip")
-        zip_directory = os.path.dirname(zip_filename)
+        #zip_directory = os.path.dirname(zip_filename)
 
-        if not os.path.exists(zip_directory):
-            os.makedirs(zip_directory)
+        #if not os.path.exists(zip_directory):
+        #    os.makedirs(zip_directory)
 
         mode = 'a' if os.path.exists(os.path.dirname(zip_filename)) else 'w'
         with zipfile.ZipFile(zip_filename, mode, zipfile.ZIP_DEFLATED) as zipf:
