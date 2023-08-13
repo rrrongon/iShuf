@@ -91,23 +91,25 @@ class ImageNetNodeCommunication:
             #if self.rank==0:
             #    print("Sending sample index: {0}".format(sample_idx))
 
+        del important_samples
+
         #self.comm.Barrier()
         hvd.allreduce(torch.tensor(0), name="barrier")
 
         # 3. Create batch of data
-        sample_batch = list()
-        for idx in range(len(target_ranks)):
-            data_pack = dict()
+        #sample_batch = list()
+        #for idx in range(len(target_ranks)):
+        #    data_pack = dict()
 
-            data_tup = self.dataset[sample_indexes[idx]]
-            data_pack['sample'] = data_tup[0]
-            data_pack['label'] = data_tup[1]
-            data_pack['path'] = data_tup[2]
+        #    data_tup = self.dataset[sample_indexes[idx]]
+        #    data_pack['sample'] = data_tup[0]
+        #    data_pack['label'] = data_tup[1]
+        #    data_pack['path'] = data_tup[2]
 
-            sample_batch.append(data_pack)
+        #    sample_batch.append(data_pack)
 
         #self.comm.Barrier()
-        hvd.allreduce(torch.tensor(0), name="barrier")
+        #hvd.allreduce(torch.tensor(0), name="barrier")
 
         for idx in range(len(target_ranks)):
 
@@ -115,10 +117,21 @@ class ImageNetNodeCommunication:
             if self.rank != target_rank:
                 #print("Rank#{0}, sending Rank:{1}".format(self.rank, target_rank))
                 #sys.stdout.flush()
-                data_pack = sample_batch[idx]
+                data_pack = dict()
+
+                data_tup = self.dataset[sample_indexes[idx]]
+                data_pack['sample'] = data_tup[0]
+                data_pack['label'] = data_tup[1]
+                data_pack['path'] = data_tup[2]
+
+                #data_pack = sample_batch[idx]
+                #sample_batch[idx] = None
 
                 send_data = {'idx': idx, 'sample': data_pack['sample'], 'label': data_pack['label'], 'path': data_pack['path']}
                 req = self.comm.isend(send_data, dest= target_rank, tag=idx)
+                del data_pack
+                del send_data
+                del data_tup
 
                 self.send_requests.append(req)
                 self.clean_list.append(sample_indexes[idx])
@@ -130,6 +143,8 @@ class ImageNetNodeCommunication:
                 #source_rank = status.Get_source()
                 #received_data = pickle.loads(buff)
                 self.recvd_samples.append(recv_req)
+                del buff
+                del recv_req
 
         print("Node comm all sending complete")
         sys.stdout.flush()
@@ -156,9 +171,14 @@ class ImageNetNodeCommunication:
                 recv_datasamples = list()
                 for recv_req in self.recvd_samples:
                     recv_datasamples.append(recv_req.wait())
+                    del recv_req
 
                 self.dataset.add_new_samples(self.rank, recv_datasamples)
                 self.recvd_samples.clear()
+                del self.recvd_samples
+                del recv_datasamples
+                self.recvd_samples = list()
+
             except Exception as e:
                 print("Exception in rank {0} and error# {1}".format(self.rank, str(e)))
                 sys.stdout.flush()
@@ -177,12 +197,15 @@ class ImageNetNodeCommunication:
             count=0
             for idx, req in enumerate(self.send_requests):
                 req.wait()
-            self.send_requests.clear()
+            del self.send_requests
+            self.send_requests = list()
 
 
     def clean_sent_samples(self):
         self.dataset.remove_old_samples(self.rank, self.clean_list)
         self.clean_list.clear()
+        del self.clean_list
+        self.clean_list = list()
 
     def get_dataset(self):
         return self.dataset

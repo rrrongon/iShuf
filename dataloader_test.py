@@ -32,7 +32,7 @@ from imagenetValidation import ImageNetValidationDataset
 
 MINI = 1
 _21K = 2
-DATASET = MINI # /21K
+DATASET = _21K # /21K
 
 if DATASET == _21K:
     OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
