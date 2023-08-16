@@ -86,7 +86,7 @@ class ImageNetNodeCommunication:
         sample_indexes = list()
         #for idx in range(0, min_shuffle_count):
         for sample_idx, loss in important_samples.items():
-            #sample_index = self.permutation[idx]
+            #sample_idx = self.permutation[idx]
             sample_indexes.append(sample_idx)
             #if self.rank==0:
             #    print("Sending sample index: {0}".format(sample_idx))
@@ -140,21 +140,41 @@ class ImageNetNodeCommunication:
                 buff = np.zeros(1 << 20, dtype=np.uint8)
                 recv_req = self.comm.irecv(buff, source=MPI.ANY_SOURCE, tag=idx)
 
+                print("Rank#{0} sending..".format(self.rank))
                 #source_rank = status.Get_source()
                 #received_data = pickle.loads(buff)
                 self.recvd_samples.append(recv_req)
                 del buff
                 del recv_req
 
+                if self.send_requests is not None and len(self.send_requests)>0:
+                    for req in self.send_requests:
+                        req.wait()
+
+                if self.recvd_samples is not None and len(self.recvd_samples) > 0:
+                    try:
+                        #if self.rank ==0:
+                        #    print("received sample length: {0}".format(len(self.recvd_samples)))
+                        #    sys.stdout.flush()
+                        recv_datasamples = list()
+                        for recv_req in self.recvd_samples:
+                            recv_datasamples.append(recv_req.wait())
+                            del recv_req
+
+                        self.dataset.add_new_samples(self.rank, recv_datasamples)
+                        self.recvd_samples.clear()
+                        del self.recvd_samples
+                        del recv_datasamples
+                        self.recvd_samples = list()
+                        print("Rank#{0} receiving..".format(self.rank))
+                    except Exception as e:
+                        print("Exception in rank {0} and error# {1}".format(self.rank, str(e)))
+                        sys.stdout.flush()
+                        if self.rank == 0:
+                            self.comm.Abort()
+
         print("Node comm all sending complete")
         sys.stdout.flush()
-
-        #self.comm.Barrier()
-        hvd.allreduce(torch.tensor(0), name="barrier")
-
-        if self.send_requests is not None and len(self.send_requests)>0:
-            for req in self.send_requests:
-                req.wait()
 
         #self.comm.Barrier()
         hvd.allreduce(torch.tensor(0), name="barrier")
@@ -175,9 +195,7 @@ class ImageNetNodeCommunication:
 
                 self.dataset.add_new_samples(self.rank, recv_datasamples)
                 self.recvd_samples.clear()
-                del self.recvd_samples
                 del recv_datasamples
-                self.recvd_samples = list()
 
             except Exception as e:
                 print("Exception in rank {0} and error# {1}".format(self.rank, str(e)))

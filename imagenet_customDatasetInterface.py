@@ -146,8 +146,10 @@ class ImageNetDataset(Dataset):
 
         for i in clean_list:
             file_path = self.image_paths[i]
-            os.remove(file_path)
-
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                print("Image remove exception#{0}".format(str(e)))
         self.image_paths = filtered_paths
         self.labels = filtered_labels
 
