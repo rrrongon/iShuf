@@ -421,6 +421,9 @@ if __name__ == '__main__':
 
     hvd.init()
     rank = hvd.rank()
+
+    torch.cuda.set_device(rank)
+
     f = open('config.json')
     configs =json.load(f)
     torch.manual_seed(configs["MODEL"]["seed"])
