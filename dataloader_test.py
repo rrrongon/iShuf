@@ -30,10 +30,14 @@ from imagenet_customDatasetInterface import ImageNetDataset
 from imagenet_nodeComm import ImageNetNodeCommunication
 from imagenetValidation import ImageNetValidationDataset
 
-MINI = 1
-_21K = 2
-DATASET = _21K # /21K
+MINI = "MINI"
+_21K = "_21K"
+RAND = "RAND"
+ISHUF = "iSHUF"
 
+#DATASET = MINI # /21K
+
+'''
 if DATASET == _21K:
     OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
     PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
@@ -44,6 +48,7 @@ elif DATASET == MINI:
     PARTITION_DIR = './imagenet_dataset/imagenet-mini'
     TARGET_DIR = './imagenet_dataset/imagenet-mini'
     CLASS_NUMBER = 1000
+'''
 
 def get_accuracy(output, target):
     # get the index of the max log-probability
@@ -129,7 +134,7 @@ def plot_comp_timeBreakdown(epoch_no, plt_total_comp_output_time, plt_total_comp
     plt.savefig('Imagenet_Computation_timeBreakdown_PARTIAL.png')
 
 
-def train(epoch, mini_batch_limit, nc, _train_sampler):
+def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
 
     loss_onIndex_onEpoch = dict()
 
@@ -184,7 +189,7 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
 
             if _is_cuda:
                 data, target = data.cuda(), target.cuda()
-            print("Mini batch {0}".format(batch_idx))
+            print("Epoch#{0}: Mini batch {1}".format(epoch, batch_idx))
             #set zero to optimizer
             optimizer.zero_grad()
 
@@ -244,21 +249,24 @@ def train(epoch, mini_batch_limit, nc, _train_sampler):
                     i_list = list()
 
                     isample_computation_start_time = time.time()
-                    for i in range(len(output)):
-                        individual_output = output[i]
-                        individual_target = process_train_target[i]
-                        individual_loss = loss_fn(individual_output, individual_target)
-                        loss_values.append(individual_loss.item())
 
-                    # Obtain loss for each sample in the mini-batch by index
-                    for i, loss_value in enumerate(loss_values):
-                        #sample_index = index_list[i]
-                        sample_index = index_str_list[i]
-                        sample_index = int(sample_index)
-                        sample_loss = loss_values[i]  # Loss of the i-th sample in the mini-batch
-                        #print("index:{0}, loss:{1}".format(sample_index, sample_loss))
-                        loss_onIndex_onEpoch[sample_index] = sample_loss
-                        i_list.append(sample_index)
+                    if EXP_TYPE == ISHUF:
+                        for i in range(len(output)):
+                            individual_output = output[i]
+                            individual_target = process_train_target[i]
+                            individual_loss = loss_fn(individual_output, individual_target)
+                            loss_values.append(individual_loss.item())
+
+                        # Obtain loss for each sample in the mini-batch by index
+                        for i, loss_value in enumerate(loss_values):
+                            #sample_index = index_list[i]
+                            sample_index = index_str_list[i]
+                            sample_index = int(sample_index)
+                            sample_loss = loss_values[i]  # Loss of the i-th sample in the mini-batch
+                            #print("index:{0}, loss:{1}".format(sample_index, sample_loss))
+                            loss_onIndex_onEpoch[sample_index] = sample_loss
+                            i_list.append(sample_index)
+
                     isample_computation_end_time = time.time()
                     isample_comp_allreduce = hvd.allreduce(torch.tensor(isample_computation_end_time - isample_computation_start_time), average=True)
                     isample_comp_time += isample_comp_allreduce.item()
@@ -428,18 +436,34 @@ if __name__ == '__main__':
     configs =json.load(f)
     torch.manual_seed(configs["MODEL"]["seed"])
 
+    DATASET = configs["DATA_TYPE"]
+    EXP_TYPE = configs["EXP_TYPE"]
+
     if DATASET == MINI:
         IMGNET_DIR = configs["ROOT_DATADIR"]["imgnet_dir"]
+        val_wnid_file = "./imagenet_dataset/imagenet-mini/val_label_mini.txt"
+        OUT_FOLDER = './imagenet_dataset/imagenet-mini'
+        PARTITION_DIR = './imagenet_dataset/imagenet-mini'
+        TARGET_DIR = './imagenet_dataset/imagenet-mini'
+        CLASS_NUMBER = 1000
+
     elif DATASET == _21K:
         IMGNET_DIR = configs["ROOT_DATADIR"]["imgnet_21k_dir"]
+        val_wnid_file = "./imagenet_dataset/imagenet21k_resized/ImageNet_val_label.txt"
+        OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
+        PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
+        TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
+        CLASS_NUMBER = 21844
 
     train_folder = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/train")
     wnids_file = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/wnids.txt")
     words_file = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/words.txt")
-    val_wnid_file = os.path.join(IMGNET_DIR,"ImageNet_val_label.txt")
+
+    #val_wnid_file = os.path.join(IMGNET_DIR,"ImageNet_val_label.txt")
     class_label_file = os.path.join(IMGNET_DIR,"class-label.txt")
     _val_folder = "./imagenet_dataset/imagenet21k_resized/val"
-    val_wnid_file = "./imagenet_dataset/imagenet21k_resized/ImageNet_val_label.txt"
+
+    #val_wnid_file = "./imagenet_dataset/imagenet21k_resized/ImageNet_val_label.txt"
 
 
     train_dataset = ImageNetDataset(train_folder, wnids_file, words_file,class_label_file, CLASS_NUMBER, transform=None)
@@ -478,10 +502,15 @@ if __name__ == '__main__':
     print("training directory of rank {0} is {1}. training set len {2} and val set len{3}".format(rank, train_folder , len(train_dataset), len(_val_dataset)))
 
     wd = configs["MODEL"]["wd"]
+
+    is_preTrain = configs["PreTrain"]
     use_adasum = 0
     MPI.COMM_WORLD.Barrier()
 
-    model = models.resnet50(pretrained=True)
+    if is_preTrain:
+        model = models.resnet50(pretrained=True)
+    else:
+        model = models.resnet50(pretrained=False)
 
     num_classes = CLASS_NUMBER
     num_ftrs = model.fc.in_features
@@ -552,7 +581,7 @@ if __name__ == '__main__':
     for epoch in range(epoch_no):
         print("------------------- Epoch {0}--------------------\n".format(epoch))
 
-        train(epoch, mini_batch_limit, nc, _train_sampler)
+        train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE)
 
         hvd.barrier()
 
@@ -615,5 +644,5 @@ if __name__ == '__main__':
         print("Average output time: {0}\n".format(avg_output_time))
         print("Average loss time: {0}\n".format(avg_loss_time))
         print("Average backprop time: {0}\n".format(avg_back_time))
-        print("Average backprop time: {0}\n".format(avg_isample_com_time))
+        print("Average iSample computation time: {0}\n".format(avg_isample_com_time))
 

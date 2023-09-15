@@ -1,4 +1,4 @@
-import os
+import os, json
 import os.path
 import sys
 import math
@@ -10,10 +10,12 @@ import zipfile
 from mpi4py import MPI
 import shutil
 
-MINI = 1
-_21K = 2
-DATASET = _21K # /21K
+MINI = "MINI"
+_21K = "_21K"
+RAND = "RAND"
+ISHUF = "iSHUF"
 
+'''
 if DATASET == _21K:
     OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
     PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
@@ -22,6 +24,7 @@ elif DATASET == MINI:
     OUT_FOLDER = './imagenet_dataset/imagenet-mini'
     PARTITION_DIR = './imagenet_dataset/imagenet-mini'
     TARGET_DIR = './imagenet_dataset/imagenet-mini'
+'''
 
 argumentparser = argparse.ArgumentParser()
 argumentparser.add_argument('-npp','--npp', help='<Required> Number of Nodes to partition data among', required=True)
@@ -54,6 +57,23 @@ def main(args):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
+
+    f = open('config.json')
+    configs =json.load(f)
+    torch.manual_seed(configs["MODEL"]["seed"])
+
+    DATASET = configs["DATA_TYPE"]
+    EXP_TYPE = configs["EXP_TYPE"]
+
+
+    if DATASET == _21K:
+        OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
+        PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
+        TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
+    elif DATASET == MINI:
+        OUT_FOLDER = './imagenet_dataset/imagenet-mini'
+        PARTITION_DIR = './imagenet_dataset/imagenet-mini'
+        TARGET_DIR = './imagenet_dataset/imagenet-mini'
 
     np = int(args.npp) # Consider that each process will work for each node to partition training data
     root_dir = os.path.abspath(args.root_dir) #training directory. we should get a lot of wnid folders
@@ -88,14 +108,14 @@ def main(args):
     for each_pair in zip_files:
 
         if DATASET == _21K:
-            if counter % 2 ==0:
-                partition_no = each_pair[0]
-                sample_path = each_pair[1]
+            #if counter % 2 ==0:
+            partition_no = each_pair[0]
+            sample_path = each_pair[1]
 
-                if partition_no in partition_pair:
-                    partition_pair[partition_no].append(sample_path)
-                else:
-                    partition_pair[partition_no] = [sample_path]
+            if partition_no in partition_pair:
+                partition_pair[partition_no].append(sample_path)
+            else:
+                partition_pair[partition_no] = [sample_path]
             counter += 1
 
         elif DATASET == MINI:
@@ -137,7 +157,7 @@ def main(args):
                 arc_path = os.path.relpath(file_path, wnid_dir)
                 arc_path = wnid+'/'+arc_path
                 zipf.write(file_path, arcname=arc_path)
-                print("{0} file adding to ZIP #{1}".format(file_path, zip_filename))
+                #print("{0} file adding to ZIP #{1}".format(file_path, zip_filename))
         zipf.close()
 
         print("Rank# {0} closed the partition# {1}.".format(rank, partition_no))

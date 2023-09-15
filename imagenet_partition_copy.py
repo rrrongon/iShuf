@@ -8,20 +8,12 @@ import time
 import argparse
 import zipfile
 from mpi4py import MPI
-import shutil
+import shutil, json
 
-MINI = 1
-_21K = 2
-DATASET = _21K # /21K
-
-if DATASET == _21K:
-    OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
-    PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
-    TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
-elif DATASET == MINI:
-    OUT_FOLDER = './imagenet_dataset/imagenet-mini'
-    PARTITION_DIR = './imagenet_dataset/imagenet-mini'
-    TARGET_DIR = './imagenet_dataset/imagenet-mini'
+MINI = "MINI"
+_21K = "_21K"
+RAND = "RAND"
+ISHUF = "iSHUF"
 
 argumentparser = argparse.ArgumentParser()
 
@@ -43,6 +35,21 @@ def main(args):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
+
+    f = open('config.json')
+    configs =json.load(f)
+
+    DATASET = configs["DATA_TYPE"]
+    EXP_TYPE = configs["EXP_TYPE"]
+
+    if DATASET == _21K:
+        OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
+        PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
+        TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
+    elif DATASET == MINI:
+        OUT_FOLDER = './imagenet_dataset/imagenet-mini'
+        PARTITION_DIR = './imagenet_dataset/imagenet-mini'
+        TARGET_DIR = './imagenet_dataset/imagenet-mini'
 
     zip_files = [file for file in os.listdir(PARTITION_DIR) if file.endswith('.zip')]
     for idx, zip_file in enumerate(zip_files):

@@ -10,7 +10,7 @@
      "MODEL":{
         "batch_size": 256,
         "epochs": 20,
-        "base_lr": 0.000125,
+        "base_lr": 0.0125,
         "seed": 42,
         "batches_per_allreduce":1,
         "wd": 0.001,
@@ -18,6 +18,9 @@
         "fraction":0.1,
         "epoch": 20
 
-    }
+    },
+    "DATA_TYPE": "MINI",
+    "EXP_TYPE": "iSHUF",
+    "PreTrain": true
 
  }

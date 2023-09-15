@@ -3,10 +3,15 @@ import random
 import numpy as np
 import math
 import torch
-import sys
+import sys, json
 import pickle
 import horovod.torch as hvd
 from imp_sampling_handler import ImpSam as IS
+
+MINI = "MINI"
+_21K = "_21K"
+RAND = "RAND"
+ISHUF = "iSHUF"
 
 class ImageNetNodeCommunication:
     def __init__(self, dataset, local_batch_size = 0, fraction = 0, seed = 0, min_train_dataset_len=0, epochs=0):
@@ -29,6 +34,11 @@ class ImageNetNodeCommunication:
         self.sources = list()
         self.recvd_samples = list()
         self.iSample = IS(epochs)
+
+        f = open('config.json')
+        configs =json.load(f)
+
+        self.EXP_TYPE = configs["EXP_TYPE"]
 
     def _set_current_epoch(self, epoch):
         self.iSample.set_current_spoch(epoch)
@@ -77,21 +87,19 @@ class ImageNetNodeCommunication:
 
         # Get important sampling
         top_percent = math.ceil(self.fraction * 100) + 3
-        important_samples = self.iSample.get_top_x_sample(top_percent) #important samples as a dict
-
-        #if self.rank==0:
-        #    print("Important Samples: in rank {0}: {1}\n".format(self.rank, important_samples))
-        #    sys.stdout.flush()
 
         sample_indexes = list()
-        #for idx in range(0, min_shuffle_count):
-        for sample_idx, loss in important_samples.items():
-            #sample_idx = self.permutation[idx]
-            sample_indexes.append(sample_idx)
-            #if self.rank==0:
-            #    print("Sending sample index: {0}".format(sample_idx))
+        if self.EXP_TYPE == RAND:
+            for idx in range(0, min_shuffle_count):
+                sample_idx = self.permutation[idx]
+                sample_indexes.append(sample_idx)
 
-        del important_samples
+        elif self.EXP_TYPE == ISHUF:
+            important_samples = self.iSample.get_top_x_sample(top_percent)
+            for sample_idx, loss in important_samples.items():
+                sample_indexes.append(sample_idx)
+
+            del important_samples
 
         #self.comm.Barrier()
         hvd.allreduce(torch.tensor(0), name="barrier")
@@ -140,7 +148,8 @@ class ImageNetNodeCommunication:
                 buff = np.zeros(1 << 20, dtype=np.uint8)
                 recv_req = self.comm.irecv(buff, source=MPI.ANY_SOURCE, tag=idx)
 
-                print("Rank#{0} sending..".format(self.rank))
+                #print("Rank#{0} sending..".format(self.rank))
+
                 #source_rank = status.Get_source()
                 #received_data = pickle.loads(buff)
                 self.recvd_samples.append(recv_req)
@@ -166,7 +175,7 @@ class ImageNetNodeCommunication:
                         del self.recvd_samples
                         del recv_datasamples
                         self.recvd_samples = list()
-                        print("Rank#{0} receiving..".format(self.rank))
+                        #print("Rank#{0} receiving..".format(self.rank))
                     except Exception as e:
                         print("Exception in rank {0} and error# {1}".format(self.rank, str(e)))
                         sys.stdout.flush()
