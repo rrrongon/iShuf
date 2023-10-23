@@ -526,7 +526,7 @@ if __name__ == '__main__':
     base_lr = configs["MODEL"]["base_lr"]
     momentum = configs["MODEL"]["moment"]
 
-    scaled_lr = base_lr * hvd.size()
+    scaled_lr = base_lr #* hvd.size()
     if _is_cuda:
         # Move model to GPU.
         model.cuda()
@@ -580,6 +580,13 @@ if __name__ == '__main__':
     sample_losses = dict()
     for epoch in range(epoch_no):
         print("------------------- Epoch {0}--------------------\n".format(epoch))
+
+        if epoch %10==0:
+             scaled_lr = scaled_lr * 0.1
+             optimizer = optim.SGD(model.parameters(), lr=scaled_lr,
+                            momentum=momentum, weight_decay=wd)
+
+             optimizer = hvd.DistributedOptimizer(optimizer, named_parameters=model.named_parameters())
 
         train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE)
 

@@ -8,19 +8,19 @@
          "imgnet_21k_dir": "./imagenet_dataset/imagenet21k_resized"
      },
      "MODEL":{
-        "batch_size": 256,
-        "epochs": 20,
+        "batch_size": 32,
+        "epochs": 40,
         "base_lr": 0.0125,
         "seed": 42,
         "batches_per_allreduce":1,
-        "wd": 0.001,
+        "wd": 0.0001,
         "moment": 0.9,
-        "fraction":0.1,
-        "epoch": 20
+        "fraction":0.95,
+        "epoch": 40
 
     },
     "DATA_TYPE": "MINI",
-    "EXP_TYPE": "iSHUF",
-    "PreTrain": true
+    "EXP_TYPE": "RAND",
+    "PreTrain": false
 
  }
