@@ -68,6 +68,31 @@ def custom_accuracy(output, target):
     #print("column max#{0}\n correct#{1}\n accuracy#{2}".format(pred_column_max, correct, accuracy))
     return correct, total
 
+class CustomCrossEntropyLoss(nn.Module):
+    def __init__(self, weight=None, size_average=None, reduce=None, reduction='mean'):
+        super().__init__()
+        self.weight = weight
+        self.size_average = size_average
+        self.reduce = reduce
+        self.reduction = reduction
+
+    def forward(self, input, target):
+        # Calculate custom cross-entropy loss for each sample in the batch
+        individual_losses = -torch.sum(target * torch.log(F.softmax(input, dim=1)), dim=1)
+
+        if self.weight is not None:
+            individual_losses = individual_losses * self.weight
+
+        # Compute the total batch loss
+        if self.size_average:
+            batch_loss = individual_losses.mean()
+        elif self.reduce:
+            batch_loss = individual_losses.sum()
+        else:
+            batch_loss = individual_losses.mean()
+
+        return batch_loss, individual_losses.tolist()
+
 
 class Result(object):
     def __init__(self, name):
@@ -189,7 +214,7 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
 
             if _is_cuda:
                 data, target = data.cuda(), target.cuda()
-            print("Epoch#{0}: Mini batch {1}".format(epoch, batch_idx))
+            #print("Epoch#{0}: Mini batch {1}".format(epoch, batch_idx))
             #set zero to optimizer
             optimizer.zero_grad()
 
@@ -230,7 +255,8 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
                     Measure loss computation time
                     '''
                     computation_loss_start_time = time.time()
-                    loss = loss_fn(output, process_train_target)
+                    #loss = loss_fn(output, process_train_target)
+                    loss, loss_values = custom_loss(output, process_train_target)
                     computation_loss_end_time = time.time()
 
                     comp_loss_time_allreduce = hvd.allreduce(torch.tensor(computation_loss_end_time - computation_loss_start_time), average=True)
@@ -245,24 +271,24 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
                     comp_backward_allreduce = hvd.allreduce(torch.tensor(computation_backward_end_time - computation_backward_start_time), average=True)
                     total_comp_backward_time += comp_backward_allreduce.item()
 
-                    loss_values = []  # List to store the loss values of each sample
+                    #loss_values = []  # List to store the loss values of each sample
                     i_list = list()
 
                     isample_computation_start_time = time.time()
 
                     if EXP_TYPE == ISHUF:
-                        for i in range(len(output)):
-                            individual_output = output[i]
-                            individual_target = process_train_target[i]
-                            individual_loss = loss_fn(individual_output, individual_target)
-                            loss_values.append(individual_loss.item())
+                        #for i in range(len(output)):
+                        #    individual_output = output[i]
+                        #    individual_target = process_train_target[i]
+                        #    individual_loss = loss_fn(individual_output, individual_target)
+                        #    loss_values.append(individual_loss.item())
 
                         # Obtain loss for each sample in the mini-batch by index
                         for i, loss_value in enumerate(loss_values):
                             #sample_index = index_list[i]
                             sample_index = index_str_list[i]
                             sample_index = int(sample_index)
-                            sample_loss = loss_values[i]  # Loss of the i-th sample in the mini-batch
+                            sample_loss = loss_value #loss_values[i]  # Loss of the i-th sample in the mini-batch
                             #print("index:{0}, loss:{1}".format(sample_index, sample_loss))
                             loss_onIndex_onEpoch[sample_index] = sample_loss
                             i_list.append(sample_index)
@@ -432,7 +458,7 @@ if __name__ == '__main__':
 
     torch.cuda.set_device(rank)
 
-    f = open('config.json')
+    f = open('/home/r.rongon/research/project_shuffle/customdatasampler_rand/config.json')
     configs =json.load(f)
     torch.manual_seed(configs["MODEL"]["seed"])
 
@@ -441,10 +467,10 @@ if __name__ == '__main__':
 
     if DATASET == MINI:
         IMGNET_DIR = configs["ROOT_DATADIR"]["imgnet_dir"]
-        val_wnid_file = "./imagenet_dataset/imagenet-mini/val_label_mini.txt"
-        OUT_FOLDER = './imagenet_dataset/imagenet-mini'
-        PARTITION_DIR = './imagenet_dataset/imagenet-mini'
-        TARGET_DIR = './imagenet_dataset/imagenet-mini'
+        val_wnid_file = "/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini/val_label_mini.txt"
+        OUT_FOLDER = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
+        PARTITION_DIR = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
+        TARGET_DIR = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
         CLASS_NUMBER = 1000
 
     elif DATASET == _21K:
@@ -461,7 +487,7 @@ if __name__ == '__main__':
 
     #val_wnid_file = os.path.join(IMGNET_DIR,"ImageNet_val_label.txt")
     class_label_file = os.path.join(IMGNET_DIR,"class-label.txt")
-    _val_folder = "./imagenet_dataset/imagenet21k_resized/val"
+    _val_folder = "/scratch/user/r.rongon/20231023_123818/imagenet_dataset/val_dataset"
 
     #val_wnid_file = "./imagenet_dataset/imagenet21k_resized/ImageNet_val_label.txt"
 
@@ -526,7 +552,7 @@ if __name__ == '__main__':
     base_lr = configs["MODEL"]["base_lr"]
     momentum = configs["MODEL"]["moment"]
 
-    scaled_lr = base_lr #* hvd.size()
+    scaled_lr = base_lr * hvd.size()
     if _is_cuda:
         # Move model to GPU.
         model.cuda()
@@ -541,6 +567,8 @@ if __name__ == '__main__':
 
     optimizer = hvd.DistributedOptimizer(optimizer, named_parameters=model.named_parameters())
     loss_fn = nn.CrossEntropyLoss()
+
+    custom_loss = CustomCrossEntropyLoss()
 
     MPI.COMM_WORLD.Barrier()
     # Horovod: broadcast parameters & optimizer state.
@@ -580,14 +608,14 @@ if __name__ == '__main__':
     sample_losses = dict()
     for epoch in range(epoch_no):
         print("------------------- Epoch {0}--------------------\n".format(epoch))
-
-        if epoch %10==0:
-             scaled_lr = scaled_lr * 0.1
-             optimizer = optim.SGD(model.parameters(), lr=scaled_lr,
-                            momentum=momentum, weight_decay=wd)
-
-             optimizer = hvd.DistributedOptimizer(optimizer, named_parameters=model.named_parameters())
-
+        hvd.barrier()
+        if epoch !=0 and epoch % 30==0:
+            scaled_lr *= 0.1
+            print("learning rate changed to {0}".format(scaled_lr))
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = scaled_lr
+        hvd.barrier()
+        
         train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE)
 
         hvd.barrier()

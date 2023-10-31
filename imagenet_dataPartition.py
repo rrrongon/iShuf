@@ -27,8 +27,8 @@ elif DATASET == MINI:
 '''
 
 argumentparser = argparse.ArgumentParser()
-argumentparser.add_argument('-npp','--npp', help='<Required> Number of Nodes to partition data among', required=True)
-argumentparser.add_argument('-f','--root-dir', help='Folder path of datasets', required=True)
+#argumentparser.add_argument('-npp','--npp', help='<Required> Number of Nodes to partition data among', required=True)
+#argumentparser.add_argument('-f','--root-dir', help='Folder path of datasets', required=True)
 IMG_EXTENSIONS = [
     '.jpg', '.JPG', '.jpeg', '.JPEG',
     '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP',
@@ -58,9 +58,8 @@ def main(args):
     rank = comm.Get_rank()
     size = comm.Get_size()
 
-    f = open('config.json')
+    f = open('/home/r.rongon/research/project_shuffle/customdatasampler_rand/config.json')
     configs =json.load(f)
-    torch.manual_seed(configs["MODEL"]["seed"])
 
     DATASET = configs["DATA_TYPE"]
     EXP_TYPE = configs["EXP_TYPE"]
@@ -71,13 +70,16 @@ def main(args):
         PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
         TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
     elif DATASET == MINI:
-        OUT_FOLDER = './imagenet_dataset/imagenet-mini'
-        PARTITION_DIR = './imagenet_dataset/imagenet-mini'
-        TARGET_DIR = './imagenet_dataset/imagenet-mini'
+        OUT_FOLDER = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
+        PARTITION_DIR = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
+        TARGET_DIR = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
 
-    np = int(args.npp) # Consider that each process will work for each node to partition training data
-    root_dir = os.path.abspath(args.root_dir) #training directory. we should get a lot of wnid folders
+    #np = int(args.npp) # Consider that each process will work for each node to partition training data
+    #root_dir = os.path.abspath(args.root_dir) #training directory. we should get a lot of wnid folders
 
+    np = 4
+    #root_dir = '/scratch/user/r.rongon/myprefix_20230921_182522/imagenet_dataset/imagenet-mini/train' #os.path.abspath(args.root_dir) #training directory. we should get a lot of wnid folders
+    root_dir = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini/train'
 
     # Get all directories in the directory
     wnids = [d for d in os.listdir(root_dir) if os.path.isdir(root_dir)]
