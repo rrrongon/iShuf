@@ -35,7 +35,7 @@ class ImageNetNodeCommunication:
         self.recvd_samples = list()
         self.iSample = IS(epochs)
 
-        f = open('config.json')
+        f = open('/home/r.rongon/research/project_shuffle/customdatasampler_rand/config.json')
         configs =json.load(f)
 
         self.EXP_TYPE = configs["EXP_TYPE"]
@@ -96,6 +96,7 @@ class ImageNetNodeCommunication:
 
         elif self.EXP_TYPE == ISHUF:
             important_samples = self.iSample.get_top_x_sample(top_percent)
+            #print("Important Samples (index, loss) pair: {0}".format(important_samples))
             for sample_idx, loss in important_samples.items():
                 sample_indexes.append(sample_idx)
 

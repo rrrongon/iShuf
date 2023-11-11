@@ -70,16 +70,16 @@ def main(args):
         PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
         TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
     elif DATASET == MINI:
-        OUT_FOLDER = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
-        PARTITION_DIR = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
-        TARGET_DIR = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
+        OUT_FOLDER = configs["mini"]
+        PARTITION_DIR = configs["mini"]
+        TARGET_DIR = configs["mini"]
 
     #np = int(args.npp) # Consider that each process will work for each node to partition training data
     #root_dir = os.path.abspath(args.root_dir) #training directory. we should get a lot of wnid folders
 
     np = 4
     #root_dir = '/scratch/user/r.rongon/myprefix_20230921_182522/imagenet_dataset/imagenet-mini/train' #os.path.abspath(args.root_dir) #training directory. we should get a lot of wnid folders
-    root_dir = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini/train'
+    root_dir = PARTITION_DIR + '/train'
 
     # Get all directories in the directory
     wnids = [d for d in os.listdir(root_dir) if os.path.isdir(root_dir)]

@@ -17,6 +17,7 @@ from  torchvision import transforms, models
 import PIL
 from mpi4py import MPI
 import sys
+import time
 
 def rank_replace_img_path(rank, old_path):
     # split the path into its components
@@ -54,6 +55,11 @@ class ImageNetDataset(Dataset):
                 wnid, label = line.strip().split()
                 self.wnid_to_label[wnid] = int(label)
 
+        self.image_reading_times = 0
+        self.image_readTrans_times = 0
+        self.total_fileSize = 0
+
+        self.count_fileAccess = 0
 
     def __len__(self):
         return len(self.image_paths)
@@ -65,11 +71,19 @@ class ImageNetDataset(Dataset):
         #label = self.labels[index]
         #image = Image.open(image_path).convert('RGB')
 
+        file_size_bytes = os.path.getsize(image_path)
+        file_size_kilobytes = file_size_bytes / 1024    
+        self.total_fileSize += file_size_kilobytes
+	
+        start_time = time.time()	
         image = PIL.Image.open(image_path)
+        self.count_fileAccess += 1
+        self.image_reading_times += time.time() - start_time
 
         if self.transform is not None:
             image = self.transform(image)
-
+        self.image_readTrans_times += time.time() - start_time       
+        
         y_one_hot = torch.zeros(self.num_classes)
         y_one_hot[label] = 1
 
@@ -141,6 +155,20 @@ class ImageNetDataset(Dataset):
             hvd.Abort()
 
     def remove_old_samples(self, rank, clean_list):
+        #mask = np.ones(len(self.image_paths), dtype=bool)
+        #mask[clean_list] = False
+        #temp_paths = self.image_paths[mask]
+        #temp_paths = [path for i, path in enumerate(self.image_paths) if mask[i]]
+        #del self.image_paths
+        #self.image_paths = temp_paths
+ 
+        #temp_labels = self.labels[mask]
+        #temp_labels = [l for i, l in enumerate(self.labels) if i not in clean_list]
+        #del self.labels
+        #self.labels = temp_labels
+ 
+        #del mask
+
         filtered_paths = [p for i, p in enumerate(self.image_paths) if i not in clean_list]
         filtered_labels = [l for i, l in enumerate(self.labels) if i not in clean_list]
 
@@ -152,7 +180,6 @@ class ImageNetDataset(Dataset):
                 print("Image remove exception#{0}".format(str(e)))
         self.image_paths = filtered_paths
         self.labels = filtered_labels
-
 
     def get_imagepaths(self):
         return self.image_paths

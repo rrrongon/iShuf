@@ -36,7 +36,7 @@ def main(args):
     rank = comm.Get_rank()
     size = comm.Get_size()
 
-    f = open('config.json')
+    f = open('/home/r.rongon/research/project_shuffle/customdatasampler_rand/config.json')
     configs =json.load(f)
 
     DATASET = configs["DATA_TYPE"]
@@ -47,9 +47,9 @@ def main(args):
         PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
         TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
     elif DATASET == MINI:
-        OUT_FOLDER = './imagenet_dataset/imagenet-mini'
-        PARTITION_DIR = './imagenet_dataset/imagenet-mini'
-        TARGET_DIR = './imagenet_dataset/imagenet-mini'
+        OUT_FOLDER = configs["mini"] 
+        PARTITION_DIR = configs["mini"] 
+        TARGET_DIR = configs["mini"] 
 
     zip_files = [file for file in os.listdir(PARTITION_DIR) if file.endswith('.zip')]
     for idx, zip_file in enumerate(zip_files):

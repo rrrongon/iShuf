@@ -259,9 +259,13 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
                     loss, loss_values = custom_loss(output, process_train_target)
                     computation_loss_end_time = time.time()
 
+                    torch.cuda.synchronize()
+                    hvd.allreduce(torch.tensor(0), name="barrier")
+
                     comp_loss_time_allreduce = hvd.allreduce(torch.tensor(computation_loss_end_time - computation_loss_start_time), average=True)
                     total_comp_loss_time += comp_loss_time_allreduce.item()
 
+            
                     '''
                     Measure backward computation time
                     '''
@@ -324,6 +328,50 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
     #    print("Rank#{0}, Epoch#{1}, total average computation time: {2} seconds".format(rank, epoch, total_computation_time))
         print("---- shuffling starts----")
 
+    #Get reading time from the dataset internal
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
+    true_img_reading_time = train_dataset.image_reading_times
+    plt_image_reading_times.append(train_dataset.image_reading_times)
+    train_dataset.image_reading_times = 0
+    
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
+    true_img_reading_time_allreduce = hvd.allreduce(torch.tensor(true_img_reading_time), average=True)
+    true_img_reading_time_allr = true_img_reading_time_allreduce.item() 
+    plt_true_img_reading_time_allreduce.append(true_img_reading_time_allr)
+
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
+    true_image_readTrans_time = train_dataset.image_readTrans_times
+    plt_image_readtrans_times.append(train_dataset.image_readTrans_times)
+    train_dataset.image_readTrans_times = 0
+    
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
+    true_image_readTrans_time_allreduce = hvd.allreduce(torch.tensor(true_image_readTrans_time), average=True)
+    true_image_readTrans_time_allr = true_image_readTrans_time_allreduce.item()
+    plt_true_image_readTrans_time_allreduce.append(true_image_readTrans_time_allr)
+
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
+    epoch_total_fileSize = train_dataset.total_fileSize
+    train_dataset.total_fileSize = 0
+    avg_epoch_total_fileSize = hvd.allreduce(torch.tensor(epoch_total_fileSize), average=True)
+    avg_epoch_total_fileSize = avg_epoch_total_fileSize.item()
+    plt_avg_epoch_total_fileSize.append(avg_epoch_total_fileSize)
+
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
+    epoch_fileAccess_count = train_dataset.count_fileAccess
+    train_dataset.count_fileAccess = 0
+    avg_epoch_fileAccess_count = hvd.allreduce(torch.tensor(epoch_fileAccess_count), average=True)
+    avg_epoch_fileAccess_count = avg_epoch_fileAccess_count.item()
+    plt_avg_epoch_fileAccess_count.append(avg_epoch_fileAccess_count)
+
+
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
 
     shuffling_start_time = time.time()
     nc._set_current_unsorted_batchLoss(loss_onIndex_onEpoch) #IS
@@ -372,6 +420,35 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
 
     print(f"Epoch#{epoch}: Rank#{rank} accuracy#{acc} Percent and loss#{loss.item()}")
     sys.stdout.flush()
+
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
+
+    plt_shuffling_image_reading_times.append(train_dataset.image_reading_times)
+    train_dataset.image_reading_times = 0
+    plt_shuffling_image_readtrans_times.append(train_dataset.image_readTrans_times)
+    train_dataset.image_readTrans_times=0
+
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
+
+    epoch_total_shuf_fileSize = train_dataset.total_fileSize
+    train_dataset.total_fileSize = 0
+    avg_epoch_total_shuf_fileSize = hvd.allreduce(torch.tensor(epoch_total_shuf_fileSize), average=True)
+    avg_epoch_total_shuf_fileSize = avg_epoch_total_shuf_fileSize.item()
+    plt_avg_epoch_total_shuf_fileSize.append(avg_epoch_total_shuf_fileSize)
+
+
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
+    epoch_fileAccess_count_shuf = train_dataset.count_fileAccess
+    train_dataset.count_fileAccess = 0
+    avg_epoch_fileAccess_count_shuf = hvd.allreduce(torch.tensor(epoch_fileAccess_count_shuf), average=True)
+    avg_epoch_fileAccess_count_shuf = avg_epoch_fileAccess_count_shuf.item()
+    plt_avg_epoch_fileAccess_count_shuf.append(avg_epoch_fileAccess_count_shuf)
+
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
 
     if rank==0:
         print(f"Average Rank#{rank} accuracy#{acc_res.avg()} Percent and loss#{loss_res.avg()}")
@@ -467,10 +544,10 @@ if __name__ == '__main__':
 
     if DATASET == MINI:
         IMGNET_DIR = configs["ROOT_DATADIR"]["imgnet_dir"]
-        val_wnid_file = "/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini/val_label_mini.txt"
-        OUT_FOLDER = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
-        PARTITION_DIR = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
-        TARGET_DIR = '/scratch/user/r.rongon/20231023_123818/imagenet_dataset/imagenet-mini'
+        val_wnid_file = "/scratch/user/r.rongon/imagenet_dataset_20231107_095255/imagenet_dataset/imagenet-mini/val_label_mini.txt"
+        OUT_FOLDER = configs["mini"]
+        PARTITION_DIR = configs["mini"] 
+        TARGET_DIR =configs["mini"] 
         CLASS_NUMBER = 1000
 
     elif DATASET == _21K:
@@ -487,7 +564,7 @@ if __name__ == '__main__':
 
     #val_wnid_file = os.path.join(IMGNET_DIR,"ImageNet_val_label.txt")
     class_label_file = os.path.join(IMGNET_DIR,"class-label.txt")
-    _val_folder = "/scratch/user/r.rongon/20231023_123818/imagenet_dataset/val_dataset"
+    _val_folder = "/scratch/user/r.rongon/imagenet_dataset_20231107_095255/imagenet_dataset/val_dataset"
 
     #val_wnid_file = "./imagenet_dataset/imagenet21k_resized/ImageNet_val_label.txt"
 
@@ -552,7 +629,7 @@ if __name__ == '__main__':
     base_lr = configs["MODEL"]["base_lr"]
     momentum = configs["MODEL"]["moment"]
 
-    scaled_lr = base_lr * hvd.size()
+    scaled_lr = base_lr #* hvd.size()
     if _is_cuda:
         # Move model to GPU.
         model.cuda()
@@ -605,11 +682,26 @@ if __name__ == '__main__':
     plt_total_training_time = list()
     plt_total_computation_time = list()
 
+    plt_image_reading_times = list()
+    plt_image_readtrans_times = list()
+
+    plt_shuffling_image_reading_times = list()
+    plt_shuffling_image_readtrans_times = list()
+
+    plt_true_img_reading_time_allreduce = list()
+    plt_true_image_readTrans_time_allreduce = list()
+
+    plt_avg_epoch_total_fileSize = list()
+    plt_avg_epoch_total_shuf_fileSize = list()
+
+    plt_avg_epoch_fileAccess_count_shuf = list()
+    plt_avg_epoch_fileAccess_count = list()
+
     sample_losses = dict()
     for epoch in range(epoch_no):
         print("------------------- Epoch {0}--------------------\n".format(epoch))
         hvd.barrier()
-        if epoch !=0 and epoch % 30==0:
+        if epoch !=0 and epoch % 20==0:
             scaled_lr *= 0.1
             print("learning rate changed to {0}".format(scaled_lr))
             for param_group in optimizer.param_groups:
@@ -621,6 +713,10 @@ if __name__ == '__main__':
         hvd.barrier()
 
         validation(epoch)
+        #plt_image_reading_times.append(train_dataset.image_reading_times)
+        #train_dataset.image_reading_times = 0
+        #plt_image_readtrans_times.append(train_dataset.image_readTrans_times)
+        #train_dataset.image_readTrans_times = 0
 
     nc.dump_result(rank)
     # Draw plot
@@ -671,6 +767,20 @@ if __name__ == '__main__':
         avg_comp_time= calculate_average(plt_total_computation_time)
         avg_isample_com_time = calculate_average(plt_total_isampleComputation_time)
 
+        avg_img_reading_time = calculate_average(plt_image_reading_times)
+        avg_readTrans_time = calculate_average(plt_image_readtrans_times)
+        avg_shuffling_img_reading_time = calculate_average(plt_shuffling_image_reading_times)
+        avg_shuffling_readTrans_time = calculate_average(plt_shuffling_image_readtrans_times)
+
+        avg_true_img_reading_time_allreduce = calculate_average(plt_true_img_reading_time_allreduce)
+        avg_true_image_readTrans_time_allreduce = calculate_average(plt_true_image_readTrans_time_allreduce)
+
+        avg_plt_avg_epoch_total_fileSize = calculate_average(plt_avg_epoch_total_fileSize)
+        avg_plt_avg_epoch_total_shuf_fileSize = calculate_average(plt_avg_epoch_total_shuf_fileSize)
+
+        avg_plt_avg_epoch_fileAccess_count_shuf = calculate_average(plt_avg_epoch_fileAccess_count_shuf)
+        avg_plt_avg_epoch_fileAccess_count = calculate_average(plt_avg_epoch_fileAccess_count)
+
         print("----------------------\n")
         print("Average training time: {0}\n".format(avg_training_time))
         print("Average computation time: {0}\n".format(avg_comp_time))
@@ -681,3 +791,17 @@ if __name__ == '__main__':
         print("Average backprop time: {0}\n".format(avg_back_time))
         print("Average iSample computation time: {0}\n".format(avg_isample_com_time))
 
+        print("Average actual reading time from dataset class: {0}".format(avg_img_reading_time))
+        print("Average actual read+Transformation time from dataset class: {0}\n".format(avg_readTrans_time))
+
+        print("Average reading time while shuffling dataset class: {0}".format(avg_shuffling_img_reading_time))
+        print("Average reading+ transformation time while shuffling dataset class: {0}\n".format(avg_shuffling_readTrans_time))
+
+        print("Average Average reading time while shuffling dataset class: {0}".format(avg_true_img_reading_time_allreduce))
+        print("Average Average reading + transformation time while shuffling dataset class: {0}\n".format(avg_true_image_readTrans_time_allreduce))
+
+        print("Average Average total file size in KB during reading time: {0}".format(avg_plt_avg_epoch_total_fileSize))
+        print("Average Average total file size during shuffling in KB: {0}\n".format(avg_plt_avg_epoch_total_shuf_fileSize))
+
+        print("Average Average total file access count during training: {0}".format(avg_plt_avg_epoch_fileAccess_count))
+        print("Average Average total file access count during shuffling: {0}\n".format(avg_plt_avg_epoch_fileAccess_count_shuf))
