@@ -8,6 +8,8 @@ import pickle
 import horovod.torch as hvd
 from imp_sampling_handler import ImpSam as IS
 
+from io import BytesIO
+
 MINI = "MINI"
 _21K = "_21K"
 RAND = "RAND"
@@ -129,7 +131,11 @@ class ImageNetNodeCommunication:
                 data_pack = dict()
 
                 data_tup = self.dataset[sample_indexes[idx]]
-                data_pack['sample'] = data_tup[0]
+                buf = BytesIO()
+                data_tup[0].save(buf, format="JPEG")  # You can use a different format if needed
+                image_bytes = buf.getvalue()
+
+                data_pack['sample'] = image_bytes
                 data_pack['label'] = data_tup[1]
                 data_pack['path'] = data_tup[2]
 
@@ -138,15 +144,12 @@ class ImageNetNodeCommunication:
 
                 send_data = {'idx': idx, 'sample': data_pack['sample'], 'label': data_pack['label'], 'path': data_pack['path']}
                 req = self.comm.isend(send_data, dest= target_rank, tag=idx)
-                del data_pack
-                del send_data
-                del data_tup
 
                 self.send_requests.append(req)
                 self.clean_list.append(sample_indexes[idx])
 
                 status = MPI.Status()
-                buff = np.zeros(1 << 20, dtype=np.uint8)
+                buff = np.zeros(1 << 23, dtype=np.uint8)
                 recv_req = self.comm.irecv(buff, source=MPI.ANY_SOURCE, tag=idx)
 
                 #print("Rank#{0} sending..".format(self.rank))
@@ -154,27 +157,33 @@ class ImageNetNodeCommunication:
                 #source_rank = status.Get_source()
                 #received_data = pickle.loads(buff)
                 self.recvd_samples.append(recv_req)
-                del buff
-                del recv_req
+                #del buff
+                #del recv_req
 
-                if self.send_requests is not None and len(self.send_requests)>0:
-                    for req in self.send_requests:
-                        req.wait()
+                #if self.send_requests is not None and len(self.send_requests)>0:
+                #    for req in self.send_requests:
+                req.wait()
+                del data_pack
+                del send_data
+                del data_tup
+                del image_bytes
 
                 if self.recvd_samples is not None and len(self.recvd_samples) > 0:
                     try:
                         #if self.rank ==0:
                         #    print("received sample length: {0}".format(len(self.recvd_samples)))
                         #    sys.stdout.flush()
-                        recv_datasamples = list()
-                        for recv_req in self.recvd_samples:
-                            recv_datasamples.append(recv_req.wait())
-                            del recv_req
-
-                        self.dataset.add_new_samples(self.rank, recv_datasamples)
+                        #recv_datasamples = list()
+                        #for recv_req in self.recvd_samples:
+                        #recv_datasamples.append(self.recvd_samples[0].wait())
+                            #del recv_req
+                        recv_data = recv_req.wait()
+                        self.dataset.add_new_samples(self.rank, recv_data)
                         self.recvd_samples.clear()
                         del self.recvd_samples
-                        del recv_datasamples
+                        del recv_data
+                       
+                        #del recv_datasamples
                         self.recvd_samples = list()
                         #print("Rank#{0} receiving..".format(self.rank))
                     except Exception as e:
@@ -187,6 +196,7 @@ class ImageNetNodeCommunication:
         sys.stdout.flush()
 
         #self.comm.Barrier()
+        torch.cuda.synchronize()
         hvd.allreduce(torch.tensor(0), name="barrier")
 
     def sync_recv(self):

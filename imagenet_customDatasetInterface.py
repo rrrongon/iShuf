@@ -19,6 +19,8 @@ from mpi4py import MPI
 import sys
 import time
 
+from io import BytesIO
+
 def rank_replace_img_path(rank, old_path):
     # split the path into its components
     path_components = old_path.split("/")
@@ -89,6 +91,9 @@ class ImageNetDataset(Dataset):
 
         return image, y_one_hot, image_path, str(index)
 
+    def set_tranforms(self, trans):
+        self.transform = trans
+
     def read_classes(self, wnids_file, words_file):
         with open(wnids_file, 'r') as file:
             wnids = [line.strip() for line in file]
@@ -115,39 +120,38 @@ class ImageNetDataset(Dataset):
             self.wnid_label_dic[class_label] = wnid
         return image_paths, labels
 
-    def add_new_samples(self, rank, recvd_samples):
+    def add_new_samples(self, rank, recvd_sample):
         try:
-            for sample in recvd_samples:
-                path = sample['path']
-                label = torch.argmax(sample['label']).item()
-                #label = sample['label']
-                #image = sample['sample']
+            #print("recv sample in custom interface# {0}\n".format(recvd_sample))
+            #for sample in recvd_samples:
+            path = recvd_sample['path']
+            label = torch.argmax(recvd_sample['label']).item()
+            #label = sample['label']
+            image = recvd_sample['sample']
 
-                replaced_path = rank_replace_img_path(rank, path) #when multiple ranks
-                #if rank ==0:
-                #    print("received sample path: {0}.\n Replaced path:{1}".format(path, replaced_path))
-                #    sys.stdout.flush()
+            replaced_path = rank_replace_img_path(rank, path) #when multiple ranks
+            #if rank ==0:
+            #    print("received sample path: {0}.\n Replaced path:{1}".format(path, replaced_path))
+            #    sys.stdout.flush()
 
-                self.image_paths.append(replaced_path)
-                self.labels.append(label)
-        except Exception as e:
-            print("Error in adding new samples in rank#{0}".format(rank))
-            print("Exception on Rank#{0}".format(str(e)))
+            self.image_paths.append(replaced_path)
+            self.labels.append(label)
+            #for sample in recvd_samples:
+            buf = BytesIO(image)
+            received_image = Image.open(buf)
+
+            path = str(recvd_sample['path'])
+            replaced_path = rank_replace_img_path(rank, path)
+            folder_path = os.path.dirname(replaced_path)
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
+            received_image.save(replaced_path)
+            del received_image
+            del recvd_sample
+            del image
+            del buf
+            #print("Rank#{0} Image saved path {1}\n".format(rank, path))
             sys.stdout.flush()
-            hvd.Abort()
-
-        try:
-            for sample in recvd_samples:
-                tensor_to_image = transforms.ToPILImage()
-                image = tensor_to_image(sample['sample'])
-                path = str(sample['path'])
-                replaced_path = rank_replace_img_path(rank, path)
-                folder_path = os.path.dirname(replaced_path)
-                if not os.path.exists(folder_path):
-                    os.makedirs(folder_path)
-                image.save(replaced_path)
-                #print("Rank#{0} Image saved path {1}\n".format(rank, path))
-                sys.stdout.flush()
         except Exception as e:
             print("Error in saving Image in rank#{0} and path#{1}".format(rank, rank_replace_img_path(rank, path)))
             print("Exception on Rank#{0}".format(str(e)))

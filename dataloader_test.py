@@ -22,7 +22,7 @@ import torch.utils.data.distributed as DS
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
+from io import BytesIO
 import torch.nn as nn
 
 #File Import
@@ -328,6 +328,8 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
     #    print("Rank#{0}, Epoch#{1}, total average computation time: {2} seconds".format(rank, epoch, total_computation_time))
         print("---- shuffling starts----")
 
+    train_dataset.set_tranforms(None)
+
     #Get reading time from the dataset internal
     torch.cuda.synchronize()
     hvd.allreduce(torch.tensor(0), name="barrier")
@@ -335,7 +337,6 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
     plt_image_reading_times.append(train_dataset.image_reading_times)
     train_dataset.image_reading_times = 0
     
-    torch.cuda.synchronize()
     hvd.allreduce(torch.tensor(0), name="barrier")
     true_img_reading_time_allreduce = hvd.allreduce(torch.tensor(true_img_reading_time), average=True)
     true_img_reading_time_allr = true_img_reading_time_allreduce.item() 
@@ -447,8 +448,6 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
     avg_epoch_fileAccess_count_shuf = avg_epoch_fileAccess_count_shuf.item()
     plt_avg_epoch_fileAccess_count_shuf.append(avg_epoch_fileAccess_count_shuf)
 
-    torch.cuda.synchronize()
-    hvd.allreduce(torch.tensor(0), name="barrier")
 
     if rank==0:
         print(f"Average Rank#{rank} accuracy#{acc_res.avg()} Percent and loss#{loss_res.avg()}")
@@ -470,6 +469,8 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
         plt_total_computation_time.append(computation_time)
         plt_train_time.append(training_time)
 
+    torch.cuda.synchronize()
+    hvd.allreduce(torch.tensor(0), name="barrier")
 
 def validation(epoch):
     #if epoch % 5 = 0:
@@ -701,7 +702,7 @@ if __name__ == '__main__':
     for epoch in range(epoch_no):
         print("------------------- Epoch {0}--------------------\n".format(epoch))
         hvd.barrier()
-        if epoch !=0 and epoch % 20==0:
+        if epoch !=0 and epoch % 10==0:
             scaled_lr *= 0.1
             print("learning rate changed to {0}".format(scaled_lr))
             for param_group in optimizer.param_groups:
@@ -710,13 +711,25 @@ if __name__ == '__main__':
         
         train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE)
 
-        hvd.barrier()
+        torch.cuda.synchronize()
+        hvd.allreduce(torch.tensor(0), name="barrier")
 
+
+        train_dataset.set_tranforms(transforms.Compose([
+            transforms.Resize(256),                          # Resize the image to 256x256 pixels
+            transforms.CenterCrop(224),                      # Crop the center 224x224 pixels
+            transforms.Grayscale(num_output_channels=3),     # Convert the image to RGB if it's grayscale
+            transforms.ToTensor(),                            # Convert the image to a PyTorch tensor
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],  # Normalize the image channels
+                                std=[0.229, 0.224, 0.225])
+        ]))
         validation(epoch)
         #plt_image_reading_times.append(train_dataset.image_reading_times)
         #train_dataset.image_reading_times = 0
         #plt_image_readtrans_times.append(train_dataset.image_readTrans_times)
         #train_dataset.image_readTrans_times = 0
+        torch.cuda.synchronize()
+        hvd.allreduce(torch.tensor(0), name="barrier")
 
     nc.dump_result(rank)
     # Draw plot
