@@ -120,23 +120,55 @@ class ImageNetDataset(Dataset):
             self.wnid_label_dic[class_label] = wnid
         return image_paths, labels
 
-    def add_new_samples(self, rank, recvd_sample):
+    def add_new_samples(self, rank, recvd_samples):
         try:
-            #print("recv sample in custom interface# {0}\n".format(recvd_sample))
-            #for sample in recvd_samples:
+            for sample in recvd_samples:
+                path = sample['path']
+                label = torch.argmax(sample['label']).item()
+              
+                replaced_path = rank_replace_img_path(rank, path)
+
+                self.image_paths.append(replaced_path)
+                self.labels.append(label)
+
+
+        except Exception as e:
+            print("Error in adding new samples in rank#{0}".format(rank))
+            print("Exception on Rank#{0}".format(str(e)))
+            sys.stdout.flush()
+            hvd.Abort()
+
+        try:
+            for sample in recvd_samples:
+                image = sample['sample']
+                buf = BytesIO(image)
+                received_image = Image.open(buf)
+                replaced_path = rank_replace_img_path(rank, path)
+                folder_path = os.path.dirname(replaced_path)
+                if not os.path.exists(folder_path):
+                    os.makedirs(folder_path)
+                received_image.save(replaced_path)
+                #print("Rank#{0} Image saved path {1}\n".format(rank, path))
+                sys.stdout.flush()
+                #del received_image
+                #del buf
+                #del image
+        except Exception as e:
+            print("Error in saving Image in rank#{0} and path#{1}".format(rank, rank_replace_img_path(rank, path)))
+            print("Exception on Rank#{0}".format(str(e)))
+            sys.stdout.flush()
+            hvd.Abort()
+
+
+            '''
             path = recvd_sample['path']
             label = torch.argmax(recvd_sample['label']).item()
-            #label = sample['label']
             image = recvd_sample['sample']
 
             replaced_path = rank_replace_img_path(rank, path) #when multiple ranks
-            #if rank ==0:
-            #    print("received sample path: {0}.\n Replaced path:{1}".format(path, replaced_path))
-            #    sys.stdout.flush()
 
             self.image_paths.append(replaced_path)
             self.labels.append(label)
-            #for sample in recvd_samples:
             buf = BytesIO(image)
             received_image = Image.open(buf)
 
@@ -150,14 +182,14 @@ class ImageNetDataset(Dataset):
             del recvd_sample
             del image
             del buf
-            #print("Rank#{0} Image saved path {1}\n".format(rank, path))
             sys.stdout.flush()
+            
         except Exception as e:
             print("Error in saving Image in rank#{0} and path#{1}".format(rank, rank_replace_img_path(rank, path)))
             print("Exception on Rank#{0}".format(str(e)))
             sys.stdout.flush()
             hvd.Abort()
-
+            '''
     def remove_old_samples(self, rank, clean_list):
         #mask = np.ones(len(self.image_paths), dtype=bool)
         #mask[clean_list] = False

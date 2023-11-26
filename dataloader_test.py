@@ -259,8 +259,8 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
                     loss, loss_values = custom_loss(output, process_train_target)
                     computation_loss_end_time = time.time()
 
-                    torch.cuda.synchronize()
-                    hvd.allreduce(torch.tensor(0), name="barrier")
+                    #torch.cuda.synchronize()
+                    #hvd.allreduce(torch.tensor(0), name="barrier")
 
                     comp_loss_time_allreduce = hvd.allreduce(torch.tensor(computation_loss_end_time - computation_loss_start_time), average=True)
                     total_comp_loss_time += comp_loss_time_allreduce.item()
@@ -315,6 +315,7 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
         hvd.barrier()
         optimizer.step()
         torch.cuda.synchronize()
+        hvd.allreduce(torch.tensor(0), name="barrier")
 
         '''
         @Calculate reading time for current mini-batchs and keep adding to calculate total reading time for an epoch
@@ -331,39 +332,39 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
     train_dataset.set_tranforms(None)
 
     #Get reading time from the dataset internal
-    torch.cuda.synchronize()
-    hvd.allreduce(torch.tensor(0), name="barrier")
+    #torch.cuda.synchronize()
+    #hvd.allreduce(torch.tensor(0), name="barrier")
     true_img_reading_time = train_dataset.image_reading_times
     plt_image_reading_times.append(train_dataset.image_reading_times)
     train_dataset.image_reading_times = 0
     
-    hvd.allreduce(torch.tensor(0), name="barrier")
+    #hvd.allreduce(torch.tensor(0), name="barrier")
     true_img_reading_time_allreduce = hvd.allreduce(torch.tensor(true_img_reading_time), average=True)
     true_img_reading_time_allr = true_img_reading_time_allreduce.item() 
     plt_true_img_reading_time_allreduce.append(true_img_reading_time_allr)
 
-    torch.cuda.synchronize()
-    hvd.allreduce(torch.tensor(0), name="barrier")
+    #torch.cuda.synchronize()
+    #hvd.allreduce(torch.tensor(0), name="barrier")
     true_image_readTrans_time = train_dataset.image_readTrans_times
     plt_image_readtrans_times.append(train_dataset.image_readTrans_times)
     train_dataset.image_readTrans_times = 0
     
-    torch.cuda.synchronize()
-    hvd.allreduce(torch.tensor(0), name="barrier")
+    #torch.cuda.synchronize()
+    #hvd.allreduce(torch.tensor(0), name="barrier")
     true_image_readTrans_time_allreduce = hvd.allreduce(torch.tensor(true_image_readTrans_time), average=True)
     true_image_readTrans_time_allr = true_image_readTrans_time_allreduce.item()
     plt_true_image_readTrans_time_allreduce.append(true_image_readTrans_time_allr)
 
-    torch.cuda.synchronize()
-    hvd.allreduce(torch.tensor(0), name="barrier")
+    #torch.cuda.synchronize()
+    #hvd.allreduce(torch.tensor(0), name="barrier")
     epoch_total_fileSize = train_dataset.total_fileSize
     train_dataset.total_fileSize = 0
     avg_epoch_total_fileSize = hvd.allreduce(torch.tensor(epoch_total_fileSize), average=True)
     avg_epoch_total_fileSize = avg_epoch_total_fileSize.item()
     plt_avg_epoch_total_fileSize.append(avg_epoch_total_fileSize)
 
-    torch.cuda.synchronize()
-    hvd.allreduce(torch.tensor(0), name="barrier")
+    #torch.cuda.synchronize()
+    #hvd.allreduce(torch.tensor(0), name="barrier")
     epoch_fileAccess_count = train_dataset.count_fileAccess
     train_dataset.count_fileAccess = 0
     avg_epoch_fileAccess_count = hvd.allreduce(torch.tensor(epoch_fileAccess_count), average=True)
@@ -398,8 +399,8 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
     nc.clean_sent_samples()
     #print("Rank#{0} is done in clean sent samples".format(rank))
     sys.stdout.flush()
-    torch.cuda.synchronize()
-    hvd.allreduce(torch.tensor(0), name="barrier")
+    #torch.cuda.synchronize()
+    #hvd.allreduce(torch.tensor(0), name="barrier")
 
     shuffling_end_time = time.time()
     shuffling_time_allreduce = hvd.allreduce(torch.tensor(shuffling_end_time - shuffling_start_time), average=True)
@@ -422,16 +423,16 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
     print(f"Epoch#{epoch}: Rank#{rank} accuracy#{acc} Percent and loss#{loss.item()}")
     sys.stdout.flush()
 
-    torch.cuda.synchronize()
-    hvd.allreduce(torch.tensor(0), name="barrier")
+    #torch.cuda.synchronize()
+    #hvd.allreduce(torch.tensor(0), name="barrier")
 
     plt_shuffling_image_reading_times.append(train_dataset.image_reading_times)
     train_dataset.image_reading_times = 0
     plt_shuffling_image_readtrans_times.append(train_dataset.image_readTrans_times)
     train_dataset.image_readTrans_times=0
 
-    torch.cuda.synchronize()
-    hvd.allreduce(torch.tensor(0), name="barrier")
+    #torch.cuda.synchronize()
+    #hvd.allreduce(torch.tensor(0), name="barrier")
 
     epoch_total_shuf_fileSize = train_dataset.total_fileSize
     train_dataset.total_fileSize = 0
@@ -440,8 +441,8 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
     plt_avg_epoch_total_shuf_fileSize.append(avg_epoch_total_shuf_fileSize)
 
 
-    torch.cuda.synchronize()
-    hvd.allreduce(torch.tensor(0), name="barrier")
+    #torch.cuda.synchronize()
+    #hvd.allreduce(torch.tensor(0), name="barrier")
     epoch_fileAccess_count_shuf = train_dataset.count_fileAccess
     train_dataset.count_fileAccess = 0
     avg_epoch_fileAccess_count_shuf = hvd.allreduce(torch.tensor(epoch_fileAccess_count_shuf), average=True)
@@ -469,8 +470,8 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
         plt_total_computation_time.append(computation_time)
         plt_train_time.append(training_time)
 
-    torch.cuda.synchronize()
-    hvd.allreduce(torch.tensor(0), name="barrier")
+    #torch.cuda.synchronize()
+    #hvd.allreduce(torch.tensor(0), name="barrier")
 
 def validation(epoch):
     #if epoch % 5 = 0:
@@ -545,7 +546,7 @@ if __name__ == '__main__':
 
     if DATASET == MINI:
         IMGNET_DIR = configs["ROOT_DATADIR"]["imgnet_dir"]
-        val_wnid_file = "/scratch/user/r.rongon/imagenet_dataset_20231107_095255/imagenet_dataset/imagenet-mini/val_label_mini.txt"
+        val_wnid_file = "/scratch/user/r.rongon/dataset_20231122_103233/imagenet_dataset/imagenet-mini/val_label_mini.txt"
         OUT_FOLDER = configs["mini"]
         PARTITION_DIR = configs["mini"] 
         TARGET_DIR =configs["mini"] 
@@ -553,10 +554,10 @@ if __name__ == '__main__':
 
     elif DATASET == _21K:
         IMGNET_DIR = configs["ROOT_DATADIR"]["imgnet_21k_dir"]
-        val_wnid_file = "./imagenet_dataset/imagenet21k_resized/ImageNet_val_label.txt"
-        OUT_FOLDER = './imagenet_dataset/imagenet21k_resized'
-        PARTITION_DIR = './imagenet_dataset/imagenet21k_resized'
-        TARGET_DIR = './imagenet_dataset/imagenet21k_resized'
+        val_wnid_file = "/scratch/user/r.rongon/dataset_20231122_103233/imagenet_dataset/imagenet21k/val_label_mini.txt" #"./imagenet_dataset/imagenet21k_resized/ImageNet_val_label.txt"
+        OUT_FOLDER = configs["_21K"]  #'./imagenet_dataset/imagenet21k_resized'
+        PARTITION_DIR = configs["_21K"]  #'./imagenet_dataset/imagenet21k_resized'
+        TARGET_DIR = configs["_21K"] # './imagenet_dataset/imagenet21k_resized'
         CLASS_NUMBER = 21844
 
     train_folder = os.path.join(IMGNET_DIR,"parition" + str(rank)+"/train")
@@ -565,7 +566,7 @@ if __name__ == '__main__':
 
     #val_wnid_file = os.path.join(IMGNET_DIR,"ImageNet_val_label.txt")
     class_label_file = os.path.join(IMGNET_DIR,"class-label.txt")
-    _val_folder = "/scratch/user/r.rongon/imagenet_dataset_20231107_095255/imagenet_dataset/val_dataset"
+    _val_folder = "/scratch/user/r.rongon/dataset_20231122_103233/imagenet_dataset/val_dataset"
 
     #val_wnid_file = "./imagenet_dataset/imagenet21k_resized/ImageNet_val_label.txt"
 
@@ -701,19 +702,19 @@ if __name__ == '__main__':
     sample_losses = dict()
     for epoch in range(epoch_no):
         print("------------------- Epoch {0}--------------------\n".format(epoch))
-        hvd.barrier()
-        if epoch !=0 and epoch % 10==0:
+        #hvd.barrier()
+        if epoch !=0 and epoch % 6==0:
             scaled_lr *= 0.1
             print("learning rate changed to {0}".format(scaled_lr))
             for param_group in optimizer.param_groups:
                 param_group['lr'] = scaled_lr
-        hvd.barrier()
+        #hvd.barrier()
         
         train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE)
 
-        torch.cuda.synchronize()
-        hvd.allreduce(torch.tensor(0), name="barrier")
-
+        #torch.cuda.synchronize()
+        #hvd.allreduce(torch.tensor(0), name="barrier")
+        hvd.barrier()
 
         train_dataset.set_tranforms(transforms.Compose([
             transforms.Resize(256),                          # Resize the image to 256x256 pixels
@@ -728,8 +729,9 @@ if __name__ == '__main__':
         #train_dataset.image_reading_times = 0
         #plt_image_readtrans_times.append(train_dataset.image_readTrans_times)
         #train_dataset.image_readTrans_times = 0
-        torch.cuda.synchronize()
-        hvd.allreduce(torch.tensor(0), name="barrier")
+        hvd.barrier()
+        #torch.cuda.synchronize()
+        #hvd.allreduce(torch.tensor(0), name="barrier")
 
     nc.dump_result(rank)
     # Draw plot

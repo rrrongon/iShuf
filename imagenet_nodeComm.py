@@ -132,7 +132,8 @@ class ImageNetNodeCommunication:
 
                 data_tup = self.dataset[sample_indexes[idx]]
                 buf = BytesIO()
-                data_tup[0].save(buf, format="JPEG")  # You can use a different format if needed
+                #rgb_image = data_tup[0].convert('RGB')
+                data_tup[0].save(buf, format="JPEG")
                 image_bytes = buf.getvalue()
 
                 data_pack['sample'] = image_bytes
@@ -144,6 +145,9 @@ class ImageNetNodeCommunication:
 
                 send_data = {'idx': idx, 'sample': data_pack['sample'], 'label': data_pack['label'], 'path': data_pack['path']}
                 req = self.comm.isend(send_data, dest= target_rank, tag=idx)
+                del data_pack
+                del data_tup
+                del send_data
 
                 self.send_requests.append(req)
                 self.clean_list.append(sample_indexes[idx])
@@ -157,34 +161,29 @@ class ImageNetNodeCommunication:
                 #source_rank = status.Get_source()
                 #received_data = pickle.loads(buff)
                 self.recvd_samples.append(recv_req)
-                #del buff
-                #del recv_req
+                del buff
+                del recv_req
 
-                #if self.send_requests is not None and len(self.send_requests)>0:
-                #    for req in self.send_requests:
-                req.wait()
-                del data_pack
-                del send_data
-                del data_tup
-                del image_bytes
+                if self.send_requests is not None and len(self.send_requests)>0:
+                    for req in self.send_requests:
+                        req.wait()
 
                 if self.recvd_samples is not None and len(self.recvd_samples) > 0:
                     try:
                         #if self.rank ==0:
                         #    print("received sample length: {0}".format(len(self.recvd_samples)))
                         #    sys.stdout.flush()
-                        #recv_datasamples = list()
-                        #for recv_req in self.recvd_samples:
-                        #recv_datasamples.append(self.recvd_samples[0].wait())
-                            #del recv_req
-                        recv_data = recv_req.wait()
-                        self.dataset.add_new_samples(self.rank, recv_data)
+                        recv_datasamples = list()
+                        for recv_req in self.recvd_samples:
+                            recv_datasamples.append(recv_req.wait())
+                            del recv_req
+
+                        self.dataset.add_new_samples(self.rank, recv_datasamples)
                         self.recvd_samples.clear()
                         del self.recvd_samples
-                        del recv_data
-                       
-                        #del recv_datasamples
+                        del recv_datasamples
                         self.recvd_samples = list()
+                       
                         #print("Rank#{0} receiving..".format(self.rank))
                     except Exception as e:
                         print("Exception in rank {0} and error# {1}".format(self.rank, str(e)))
@@ -196,7 +195,7 @@ class ImageNetNodeCommunication:
         sys.stdout.flush()
 
         #self.comm.Barrier()
-        torch.cuda.synchronize()
+        #torch.cuda.synchronize()
         hvd.allreduce(torch.tensor(0), name="barrier")
 
     def sync_recv(self):
