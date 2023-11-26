@@ -212,6 +212,10 @@ def train(epoch, mini_batch_limit, nc, _train_sampler, EXP_TYPE):
             # data reading time
             loading_end_time = time.time()
 
+            if rank ==0:
+                if batch_idx % 300==0:
+                    print("Epoch#{0}: Mini batch {1}".format(epoch, batch_idx))
+
             if _is_cuda:
                 data, target = data.cuda(), target.cuda()
             #print("Epoch#{0}: Mini batch {1}".format(epoch, batch_idx))
